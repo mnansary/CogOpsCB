@@ -1,0 +1,27 @@
+# /chroma-secure/docker-compose.yml
+# DEVELOPMENT-ONLY (INSECURE) CONFIGURATION
+
+services:
+  chroma:
+    image: chromadb/chroma:0.5.3
+    container_name: chroma_local_dev
+    restart: unless-stopped
+
+    # Security: Expose the ChromaDB port directly, but only to localhost.
+    ports:
+      - "127.0.0.1:8443:8000"
+
+    volumes:
+      # Map the persistent data directory.
+      - ./data:/chroma/chroma
+
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ALLOW_RESET=TRUE
+
+    healthcheck:
+      # The healthcheck now directly queries the container's internal port.
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
