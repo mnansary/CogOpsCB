@@ -61,6 +61,8 @@ sudo chmod 600 secrets/postgres_password
 echo "Your secure PostgreSQL password is: $(sudo cat secrets/postgres_password)"
 ```
 
+
+
 **Why this is important:** This method avoids placing plaintext passwords in your `docker-compose.yml` file or in shell history. Using `sudo tee` is necessary because standard output redirection (`>`) is processed by your user's shell *before* `sudo` is invoked, which would cause a "Permission Denied" error.
 
 ---
@@ -70,17 +72,25 @@ echo "Your secure PostgreSQL password is: $(sudo cat secrets/postgres_password)"
 For this guide, we will assume you have already generated the `private.key` and `public.crt` files from your Neo4j setup. We will securely copy them into place for PostgreSQL to use.
 
 ```bash
-# Ensure you are still in the /postgresql-secure directory.
+# Ensure you are in the /postgresql-secure directory.
+cd /postgresql-secure
 
-# 1. Copy the existing certificates into the certificates directory.
-# Replace '/path/to/your/neo4j-certs' with the actual path.
-sudo cp /path/to/your/neo4j-certs/private.key certificates/
+# 1. Copy your existing certificate and private key.
+# Replace '/path/to/your/neo4j-certs' with the actual source.
 sudo cp /path/to/your/neo4j-certs/public.crt certificates/
+sudo cp /path/to/your/neo4j-certs/private.key certificates/
 
-# 2. Set ownership so the container process can read them.
-# The root user inside the container needs to read these files.
-sudo chown root:root certificates/*
-sudo chmod 600 certificates/*
+# 2. Set the ownership and permissions.
+# The owner will be 'root' and the group will be '999' (the GID of the postgres user).
+sudo chown root:999 certificates/*
+
+# 3. Set permissions to '640' (rw-r-----).
+# This allows the owner 'root' to manage the files and the 'postgres' group to read them.
+sudo chmod 640 certificates/*
+
+# 4. (Optional) Verify the permissions.
+sudo ls -l certificates/
+# Expected output should show permissions as -rw-r----- and owner/group as root/999.```
 ```
 
 **Why this is important:** Reusing the same `localhost` certificate simplifies management. Setting restrictive file permissions (`chmod 600`) ensures that only the owner (`root`) can read or write the key and certificate files, which is a security best practice.
@@ -169,6 +179,20 @@ sudo docker compose logs -f
 
 ### **Step 6: Connecting to Your Secure Instance**
 
+
+#### Accessing from docker with bash
+```bash
+docker exec -it postgres_local_secure bash
+root@253771de3f22:/# psql -U postgres -h localhost
+
+psql (16.10 (Debian 16.10-1.pgdg13+1))
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off)
+Type "help" for help.
+
+postgres=# \l
+```
+
+#### tesing with python
 The final step is to prove that the security is working. A connection attempt will only succeed if it is made from `localhost` and uses SSL.
 
 Here is an example using a Python script with the `psycopg2` library.

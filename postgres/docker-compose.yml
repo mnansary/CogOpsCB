@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  postgres:
+    # Pinning a specific version is best practice for production
+    image: postgres:16
+    container_name: postgres_local_secure
+    restart: unless-stopped
+
+    # Security: Bind the port only to localhost (127.0.0.1) on the host machine.
+    # This makes the database completely inaccessible from the network.
+    ports:
+      - "127.0.0.1:5432:5432"
+
+    volumes:
+      # Map the persistent data directory
+      - ./data:/var/lib/postgresql/data
+      # Map the certificates for SSL/TLS connections
+      - ./certificates:/etc/ssl/certs:ro # 'ro' for read-only is more secure
+
+    environment:
+      # Instruct PostgreSQL to read the password from the secret file
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+      # Optional: Define the default user and database
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
+
+    secrets:
+      - postgres_password
+
+    # Command to enforce SSL and point to the mounted certificates.
+    # This is the core of the transport security configuration.
+    command: >
+      -c ssl=on
+      -c ssl_cert_file=/etc/ssl/certs/public.crt
+      -c ssl_key_file=/etc/ssl/certs/private.key
+
+    healthcheck:
+      # A reliable check to see if the database is ready for connections
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
