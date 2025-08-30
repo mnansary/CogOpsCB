@@ -4,7 +4,7 @@ import chromadb
 import logging
 import asyncio
 from dotenv import load_dotenv
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional, Any
 
 # Import your custom embedder module and its configuration
 from cogops.models.jina_embedder import JinaTritonEmbedder, JinaV3TritonEmbedderConfig
@@ -18,14 +18,12 @@ load_dotenv()
 class VectorRetriever:
     """
     A class to retrieve relevant documents from ChromaDB collections.
+    Now supports optional metadata filtering.
     """
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config_path: str = "configs/config.yaml"):
         """
         Initializes the VectorRetriever by loading configuration, setting up
         the embedder, and connecting to the ChromaDB client.
-
-        Args:
-            config_path (str): The path to the YAML configuration file.
         """
         logging.info("Initializing VectorRetriever...")
         self.config = self._load_config(config_path)
@@ -82,87 +80,66 @@ class VectorRetriever:
         embedder_config = JinaV3TritonEmbedderConfig(triton_url=TRITON_URL)
         return JinaTritonEmbedder(config=embedder_config)
 
-    def get_related_passages(self, query: str, top_k: int = None) -> List[Dict]:
-        """
-        Gets related passages by searching the primary passage collection.
-
-        Args:
-            query (str): The user query to search for.
-            top_k (int, optional): The number of results to return. Defaults to config value.
-
-        Returns:
-            List[Dict]: A list of dictionaries containing the retrieved documents and their metadata.
-        """
-        if top_k is None:
-            top_k = self.top_k
-            
-        logging.info(f"Querying collection '{self.passage_collection_name}' for '{query}' with top_k={top_k}")
-        
-        # Note: The query needs to be embedded. ChromaDB does this automatically
-        # if the collection was created with an embedding function. However, for direct
-        # query, we must provide the embedding.
-        query_embedding = self.embedder.embed_queries([query])[0]
-
-        results = self.passage_collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-        )
-        
-        # Structure the results nicely
-        retrieved_docs = []
-        if results and results['ids'][0]:
-            for i, doc_id in enumerate(results['ids'][0]):
-                retrieved_docs.append({
-                    'id': doc_id,
-                    'document': results['documents'][0][i],
-                    'metadata': results['metadatas'][0][i],
-                    'distance': results['distances'][0][i]
-                })
-        return retrieved_docs
-
-    async def _query_collection_async(self, collection_name: str, query_embedding: List[float], top_k: int) -> List[str]:
+    
+    # --- MODIFIED METHOD (Step 2) ---
+    async def _query_collection_async(
+        self,
+        collection_name: str,
+        query_embedding: List[float],
+        top_k: int,
+        filters: Optional[Dict[str, Any]] = None
+    ) -> List[int]:
         """Helper to query a single collection asynchronously and return passage_ids."""
         collection = self.all_collections[collection_name]
         try:
-            results = collection.query(
-                query_embeddings=[query_embedding],
-                n_results=top_k
-            )
-            # Extract passage_id from metadata
+            # Build the arguments for the query
+            query_args = {
+                "query_embeddings": [query_embedding],
+                "n_results": top_k
+            }
+            # If filters are provided, add them to the 'where' clause
+            if filters:
+                query_args["where"] = filters
+            
+            results = collection.query(**query_args)
+            
             passage_ids = [meta['passage_id'] for meta in results['metadatas'][0] if 'passage_id' in meta]
             return passage_ids
         except Exception as e:
             logging.error(f"Error querying {collection_name}: {e}")
             return []
 
-    async def get_unique_passages_from_all_collections(self, query: str, top_k: int = None) -> List[Dict]:
+    # --- MODIFIED METHOD (Step 1) ---
+    async def get_unique_passages_from_all_collections(
+        self,
+        query: str,
+        top_k: int = None,
+        filters: Optional[Dict[str, Any]] = None  # <-- NEW PARAMETER
+    ) -> List[Dict]:
         """
-        Gets unique passages by combining results from all collections using parallel async calls.
-
-        Args:
-            query (str): The user query to search for.
-            top_k (int, optional): The number of results to fetch from *each* collection. Defaults to config.
-
-        Returns:
-            List[Dict]: A list of unique passages from the main passage collection.
+        Gets unique passages by combining results from all collections.
+        Applies an optional metadata filter during the search.
         """
         if top_k is None:
             top_k = self.top_k
 
-        logging.info(f"Querying all collections for '{query}' with top_k={top_k} each.")
+        log_message = f"Querying all collections for '{query}' with top_k={top_k} each."
+        if filters:
+            log_message += f" Applying filters: {filters}"
+        logging.info(log_message)
         
         # 1. Embed the query once
         query_embedding = self.embedder.embed_queries([query])[0]
 
-        # 2. Create and run async query tasks for all collections
+        # 2. Create and run async query tasks, passing the filters down
         tasks = [
-            self._query_collection_async(name, query_embedding, top_k)
+            self._query_collection_async(name, query_embedding, top_k, filters) # <-- Pass filters
             for name in self.all_collection_names
         ]
         results_from_collections = await asyncio.gather(*tasks)
 
         # 3. Collect all unique passage_ids
-        unique_passage_ids: Set[str] = set()
+        unique_passage_ids: Set[int] = set()
         for passage_id_list in results_from_collections:
             unique_passage_ids.update(passage_id_list)
         
@@ -172,11 +149,11 @@ class VectorRetriever:
             return []
 
         # 4. Retrieve the full passage documents for the unique IDs
-        # The 'where' clause is not ideal for large ID lists, 'get' is better.
+        unique_ids_list = list(unique_passage_ids)
         retrieved_passages = self.passage_collection.get(
-            ids=list(unique_passage_ids)
+            where={"passage_id": {"$in": unique_ids_list}}
         )
-        
+
         # Structure the final output
         final_docs = []
         for i, doc_id in enumerate(retrieved_passages['ids']):
@@ -194,31 +171,38 @@ class VectorRetriever:
             self.embedder.close()
             logging.info("Embedder connection closed.")
 
-# --- Example Usage ---
+# --- MODIFIED EXAMPLE USAGE ---
 async def main():
-    """Main function to demonstrate the VectorRetriever."""
+    """Main function to demonstrate the VectorRetriever with filtering."""
     try:
         retriever = VectorRetriever(config_path="configs/config.yaml")
         
         user_query = "হারিয়ে যাওয়া জাতীয় পরিচয়পত্র উত্তোলনের পদ্ধতি"
 
-        print("\n--- 1. Testing: Get Related Passages from a Single Collection ---")
-        related_passages = retriever.get_related_passages(user_query)
-        print(f"Found {len(related_passages)} related passages:")
-        for passage in related_passages:
-            print(f"  - ID: {passage['id']}, Distance: {passage['distance']:.4f}")
-            print(f"    Passage: {passage['document'][:100]}...") # Print first 100 chars
-            print(f"    Metadata: {passage['metadata']}")
-        
+        # --- Example 1: Search WITHOUT a filter ---
+        print("\n--- 1. Testing: Get Unique Passages (No Filter) ---")
+        unique_passages_unfiltered = await retriever.get_unique_passages_from_all_collections(user_query)
+        print(f"Found {len(unique_passages_unfiltered)} unique passages from combined search:")
+        for passage in unique_passages_unfiltered: # Print first 2 for brevity
+            print(f"  - ID: {passage['id']}, Metadata: {passage['metadata']}")
+
         print("\n" + "="*50 + "\n")
 
-        print("--- 2. Testing: Get Unique Passages from All Collections (Async) ---")
-        unique_passages = await retriever.get_unique_passages_from_all_collections(user_query)
-        print(f"Found {len(unique_passages)} unique passages from combined search:")
-        for passage in unique_passages:
+        # --- Example 2: Search WITH a filter ---
+        print("--- 2. Testing: Get Unique Passages (With Filter) ---")
+        
+        # This is the filter dictionary. The key is the metadata field name.
+        filter_dict = {"category": 'স্মার্ট কার্ড ও জাতীয়পরিচয়পত্র'}
+        
+        unique_passages_filtered = await retriever.get_unique_passages_from_all_collections(
+            user_query,
+            filters=filter_dict
+        )
+        print(f"Found {len(unique_passages_filtered)} unique passages from filtered search:")
+        for passage in unique_passages_filtered:
             print(f"  - ID: {passage['id']}")
             print(f"    Passage: {passage['document'][:100]}...")
-            print(f"    Metadata: {passage['metadata']}")
+            print(f"    Metadata: {passage['metadata']}") # You should see the correct category here
 
     except Exception as e:
         logging.error(f"An error occurred in the main execution: {e}", exc_info=True)

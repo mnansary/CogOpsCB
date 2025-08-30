@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 import numpy as np
 import requests
 from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
@@ -65,7 +65,6 @@ class _SyncJinaV3TritonEmbedder:
             response = requests.post(
                 api_url, 
                 data=json.dumps(payload),
-                # <-- Added explicit headers for robustness
                 headers={"Content-Type": "application/json"},
                 timeout=self.config.triton_request_timeout
             )
@@ -83,15 +82,30 @@ class JinaTritonEmbedder:
         self._client = _SyncJinaV3TritonEmbedder(config)
         logger.info(f"Embedder initialized for Triton at {config.triton_url} with batch size {config.batch_size}")
 
+    # --- NEW METHOD ADDED HERE ---
+    def embed_queries(self, texts: List[str]) -> List[List[float]]:
+        """Embeds a batch of queries using the query model."""
+        if not isinstance(texts, list) or not texts:
+            return []
+        all_embeddings = []
+        # Loop to handle batching, though queries are often single.
+        for i in range(0, len(texts), self.config.batch_size):
+            batch = texts[i : i + self.config.batch_size]
+            logger.info(f"Sending query batch of {len(batch)} to Triton...")
+            # Note: We use the 'query_model_name' here
+            batch_embeddings = self._client.embed(batch, self.config.query_model_name)
+            all_embeddings.extend(batch_embeddings)
+        return all_embeddings
+
     def embed_passages(self, texts: List[str]) -> List[List[float]]:
         """Embeds a batch of documents/passages using the passage model."""
         if not isinstance(texts, list) or not texts:
             return []
         all_embeddings = []
-        # This inner loop breaks larger batches from Chroma into smaller ones for Triton
         for i in range(0, len(texts), self.config.batch_size):
             batch = texts[i : i + self.config.batch_size]
-            logger.info(f"Sending batch of {len(batch)} to Triton...")
+            logger.info(f"Sending passage batch of {len(batch)} to Triton...")
+            # Note: We use the 'passage_model_name' here
             batch_embeddings = self._client.embed(batch, self.config.passage_model_name)
             all_embeddings.extend(batch_embeddings)
         return all_embeddings

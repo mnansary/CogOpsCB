@@ -7,7 +7,7 @@ top_k: 3
 collections:
   - "PassageDB"
   - "TopicDB"
-  - "KeywordsDB"
+  - "KeywordDB"
 
 # The primary collection that contains the full passage content,
 # used to retrieve the final documents based on passage_ids.
