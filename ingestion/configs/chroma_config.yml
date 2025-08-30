@@ -9,7 +9,7 @@
 collection_name: "PassageDB"
 
 # Relative or absolute path to the input CSV file
-csv_file_path: "/home/vpa/downloads/data/processed_data_20250830.csv"
+csv_file_path: "/home/vpa/downloads/data/master_data_20250830.csv"
 
 # --- Data Mapping ---
 
@@ -20,10 +20,6 @@ content_column: "passage"
 # Each of these columns must exist in the CSV file.
 metadata_columns:
   - "passage_id"
-  - "category"
-  - "subcategory"
-  - "service"
-  - "topic"
   - "url"
   
 # --- Ingestion Settings ---
