@@ -1,17 +1,17 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
 
-Answerability = Literal[
-    "FULLY_ANSWERABLE",
-    "PARTIALLY_ANSWERABLE",
-    "NOT_ANSWERABLE"
-]
+# Answerability = Literal[
+#     "FULLY_ANSWERABLE",
+#     "PARTIALLY_ANSWERABLE",
+#     "NOT_ANSWERABLE"
+# ]
 
-class ResponseStrategy(BaseModel):
-    """Outlines the strategy for generating the final response to the user."""
-    hyde_passage: str = Field(description="A hypothetical document snippet that would perfectly answer the query. MUST BE IN BENGALI.")
-    answerability_prediction: Answerability = Field(..., description="Prediction of how well the database can answer the query.")
-    response_plan: List[str] = Field(..., description="A step-by-step plan (in English) for the response generation model.")
+# class ResponseStrategy(BaseModel):
+#     """Outlines the strategy for generating the final response to the user."""
+#     hyde_passage: str = Field(description="A hypothetical document snippet that would perfectly answer the query. MUST BE IN BENGALI.")
+#     answerability_prediction: Answerability = Field(..., description="Prediction of how well the database can answer the query.")
+#     response_plan: List[str] = Field(..., description="A step-by-step plan (in English) for the response generation model.")
 
 
 
@@ -72,7 +72,7 @@ def get_out_of_domain_service_prompt(conversation_history: str, user_query: str)
     2.  Acknowledge their specific query (e.g., if they asked about 'ট্রেড লাইসেন্স', mention it).
     3.  Clearly state that this specific service is outside your current capabilities.
     4.  Politely mention the services you *can* help with (e.g., 'পাসপোর্ট, এনআইডি, এবং জন্ম নিবন্ধন').
-    5.  Crucially, direct the user to the official Bangladesh National Portal (myGov.bd) as the best place to find information on all government services.
+    5.  Crucially, direct the user to the official Bangladesh National Portal (bangladesh.gov.bd) and service portals (mygov.bd) as the best place to find information on all government services.
     6.  Do not invent any information about the service you don't know. Keep the tone professional and supportive.
     7.  Respond only with the final, generated Bengali text. Do not add any greetings or extra text.
 

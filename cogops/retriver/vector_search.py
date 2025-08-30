@@ -26,13 +26,16 @@ class VectorRetriever:
         the embedder, and connecting to the ChromaDB client.
         """
         logging.info("Initializing VectorRetriever...")
-        self.config = self._load_config(config_path)
-        
-        # --- Configuration Attributes ---
-        self.top_k = self.config.get("top_k", 3)
-        self.all_collection_names = self.config.get("collections", [])
-        self.passage_collection_name = self.config.get("passage_collection", "PassageDB")
+        # Load the entire config first, then extract the 'vector_retriever' section.
+        full_config = self._load_config(config_path)
+        retriever_config = full_config.get("vector_retriever")
+        if not retriever_config:
+            raise ValueError(f"Configuration file at '{config_path}' is missing the 'vector_retriever' section.")
 
+        # Now, use the specific config for this class.
+        self.top_k = retriever_config.get("top_k", 3)
+        self.all_collection_names = retriever_config.get("collections", [])
+        self.passage_collection_name = retriever_config.get("passage_collection") # No default, should be specified
         if not self.all_collection_names or not self.passage_collection_name:
             raise ValueError("Configuration missing 'collections' or 'passage_collection' keys.")
 

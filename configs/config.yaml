@@ -1,14 +1,89 @@
+# ===================================================================
+# Chat Agent Master Configuration
+# ===================================================================
+
+# --- LLM Service Definitions ---
+# Define the available LLM services (e.g., different model sizes or providers).
+# The agent will load these services and map them to tasks below.
+# Values ending in '_env' specify the NAME of the environment variable to load.
+llm_services:
+  small_llm:
+    api_key_env: "VLLM_SMALL_API_KEY"
+    model_name_env: "VLLM_SMALL_MODEL_NAME"
+    base_url_env: "VLLM_SMALL_BASE_URL"
+  medium_llm:
+    api_key_env: "VLLM_MEDIUM_API_KEY"
+    model_name_env: "VLLM_MEDIUM_MODEL_NAME"
+    base_url_env: "VLLM_MEDIUM_BASE_URL"
+
+# --- Task-to-Model Mapping ---
+# Assign a defined LLM service to each specific task in the pipeline.
+# This allows you to use faster/cheaper models for simple tasks (like reranking)
+# and more powerful models for complex tasks (like final answer generation).
+task_to_model_mapping:
+  retrieval_plan: "medium_llm"    # Use medium model for robust JSON generation and intent classification.
+  reranker: "small_llm"           # Use small, fast model for parallel passage scoring.
+  answer_generator: "medium_llm"  # Use medium model for high-quality, nuanced final answers.
+  summarizer: "small_llm"         # Use small, fast model for concise history summarization.
+  non_retrieval_responder: "medium_llm" # Use medium model for better conversational ability.
+
+# --- Conversation Management ---
+conversation:
+  # The number of recent user-AI turns to keep in the conversation history.
+  # This acts as a rolling window to maintain context.
+  history_window: 3
+
 # --- Vector Retriever Configuration ---
+vector_retriever:
+  # Number of top results to retrieve from EACH collection during the initial search.
+  top_k: 3
+  # A list of all vector collection names to be queried.
+  collections:
+    - "PassageDB"
+    - "TopicDB"
+    - "KeywordDB"
+  # The name of the primary collection that contains the full passage content.
+  passage_collection: "PassageDB"
 
-# Number of top results to retrieve from each collection
-top_k: 3
+# --- Reranker Configuration ---
+reranker:
+  # The score threshold for a passage to be considered "highly relevant".
+  # In the current setup, 1=Relevant, 2=Partial, 3=Irrelevant.
+  # Setting this to 1 means only the most directly relevant passages are used.
+  relevance_score_threshold: 1
 
-# A list of all collection names to be queried
-collections:
-  - "PassageDB"
-  - "TopicDB"
-  - "KeywordDB"
+# --- Category Refinement Configuration ---
+# Parameters for the fuzzy string matching used to align the LLM's category
+# output with the canonical list of service categories.
+category_refinement:
+  # The minimum similarity score (0-100) required to consider a string a valid match.
+  # A value of 85-90 is usually a good balance between flexibility and accuracy.
+  score_cutoff: 85
 
-# The primary collection that contains the full passage content,
-# used to retrieve the final documents based on passage_ids.
-passage_collection: "PassageDB"
+# --- LLM Call Parameters ---
+# Fine-grained control over the generation parameters for each LLM task.
+llm_call_parameters:
+  retrieval_plan:
+    temperature: 0.0
+    max_tokens: 512
+  reranker:
+    temperature: 0.0
+    max_tokens: 256
+  answer_generator:
+    temperature: 0.1
+    max_tokens: 2048
+  summarizer:
+    temperature: 0.2
+    max_tokens: 512
+  non_retrieval_responder:
+    temperature: 0.4
+    max_tokens: 1024
+
+# --- Response Templates ---
+# Canned responses for specific scenarios. Centralizing them here makes it easy
+# to edit the bot's personality without changing the code.
+response_templates:
+  error_fallback: "Sorry, I encountered an unexpected error. Please try asking again."
+  plan_generation_failed: "I'm having trouble understanding your request at the moment. Could you please rephrase it?"
+  no_passages_found: " দুঃখিত, আমি এই মুহূর্তে আপনার অনুরোধ সম্পর্কিত কোনো তথ্য খুঁজে পাচ্ছি না।"
+  no_relevant_passages_after_rerank: "আমি আপনার বিষয়টি সম্পর্কিত কিছু তথ্য পেয়েছি, কিন্তু সুস্পষ্ট উত্তর খুঁজে পাইনি। আপনি কি আপনার প্রশ্নটি আরেকটু বিস্তারিতভাবে বলতে পারেন?"

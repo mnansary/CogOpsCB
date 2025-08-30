@@ -1,15 +1,21 @@
+# retriver/reranker.py
+
 import os
 import asyncio
-from typing import List, Dict, Any, Literal
+from typing import List, Dict, Any, Literal, Optional
 from pydantic import BaseModel
-# --- Import the new AsyncLLMService ---
-from cogops.models.gemma3_llm_async import AsyncLLMService 
+from cogops.models.gemma3_llm_async import AsyncLLMService
 
 class RerankedPassage(BaseModel):
-    passage_id: str
+    """
+    Represents a passage after it has been scored by the reranker.
+    It now correctly stores the passage_id from the metadata.
+    """
+    passage_id: str  # The true passage identifier from the metadata
     score: Literal[1, 2, 3]
     reasoning: str
-    document: str # Keep the original document for easy access
+    document: str
+    metadata: Optional[Dict[str, Any]] = None
 
 RERANK_PROMPT_TEMPLATE = """
 You are an expert relevance evaluation assistant. Your task is to determine if the provided PASSAGE is relevant for answering the USER QUERY, considering the CONVERSATION HISTORY.
@@ -36,10 +42,15 @@ class ParallelReranker:
         self.llm_service = llm_service
         print("✅ ParallelReranker initialized.")
 
-    async def _score_one_passage(self, passage: Dict[str, Any], history: str, query: str) -> RerankedPassage | None:
+    async def _score_one_passage(
+        self,
+        passage: Dict[str, Any],
+        history: str,
+        query: str,
+        **llm_kwargs: Any
+    ) -> RerankedPassage | None:
         """Helper coroutine to score a single passage and handle errors."""
         
-        # This is the Pydantic model for a single response
         class SinglePassageScore(BaseModel):
             score: Literal[1, 2, 3]
             reasoning: str
@@ -51,76 +62,46 @@ class ParallelReranker:
         )
         try:
             structured_response = await self.llm_service.invoke_structured(
-                prompt, SinglePassageScore
+                prompt, SinglePassageScore, **llm_kwargs
             )
+
+            # --- MODIFIED SECTION ---
+            # Extract the correct passage_id from the metadata.
+            # Fallback to the document ID if metadata or passage_id is missing.
+            passage_metadata = passage.get('metadata', {})
+            correct_passage_id = passage_metadata.get('passage_id', passage['id'])
+            # --- END MODIFIED SECTION ---
+
             return RerankedPassage(
-                passage_id=passage['id'],
+                passage_id=str(correct_passage_id), # <-- Use the correct ID
                 document=passage['document'],
                 score=structured_response.score,
-                reasoning=structured_response.reasoning
+                reasoning=structured_response.reasoning,
+                metadata=passage_metadata # <-- Pass the full metadata
             )
         except Exception as e:
             print(f"Could not score passage {passage['id']}. Error: {e}")
-            return None # Return None on failure
+            return None
 
     async def rerank(
         self,
         conversation_history: str,
         user_query: str,
-        passages: List[Dict[str, Any]]
+        passages: List[Dict[str, Any]],
+        **llm_kwargs: Any
     ) -> List[RerankedPassage]:
         """
         Reranks a list of passages using parallel, structured LLM calls.
         """
         print(f"Reranking {len(passages)} passages in parallel...")
         
-        # Create a list of tasks, one for each passage
         tasks = [
-            self._score_one_passage(passage, conversation_history, user_query)
-            for passage in passages
+            self._score_one_passage(p, conversation_history, user_query, **llm_kwargs)
+            for p in passages
         ]
         
-        # Run all tasks concurrently and wait for them to complete
         results = await asyncio.gather(*tasks)
-        
-        # Filter out any tasks that failed (returned None)
         successful_results = [res for res in results if res is not None]
-        
-        # Sort the successful results by score (1 is best)
         successful_results.sort(key=lambda x: x.score)
         
         return successful_results
-
-# --- Example Usage ---
-async def main():
-    api_key = os.getenv("VLLM_SMALL_API_KEY") # Using the faster 4B/12B model is wise
-    model = os.getenv("VLLM_SMALL_MODEL_NAME")
-    base_url = os.getenv("VLLM_SMALL_BASE_URL")
-    
-    # 1. Initialize the ASYNC service
-    llm = AsyncLLMService(api_key=api_key, model=model, base_url=base_url)
-    
-    # 2. Initialize the Reranker
-    reranker = ParallelReranker(llm_service=llm)
-
-    # 3. Dummy data
-    retrieved_passages = [
-        {'id': 'row_10', 'document': 'To reset your password, please visit the account settings page and click "Forgot Password".'},
-        {'id': 'row_55', 'document': 'Our company was founded in 1998 and specializes in cloud solutions.'},
-        {'id': 'row_23', 'document': 'You can change your password in the security section of your profile.'},
-        {'id': 'row_99', 'document': 'The sky is blue due to Rayleigh scattering.'}
-    ]
-
-    # 4. Rerank the passages (this one 'await' runs all 4 calls concurrently)
-    final_ranking = await reranker.rerank(
-        conversation_history="User: I need help with my account.",
-        user_query="How do I change my password?",
-        passages=retrieved_passages
-    )
-
-    print("\n--- Final Parallel Reranked Results ---")
-    for result in final_ranking:
-        print(f"Passage ID: {result.passage_id}, Score: {result.score}, Reasoning: {result.reasoning}")
-
-if __name__ == '__main__':
-    asyncio.run(main())

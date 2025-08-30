@@ -1,0 +1,1365 @@
+
+================================================================================
+--- File: prompts/retrive.py ---
+================================================================================
+
+from pydantic import BaseModel, Field
+from typing import Literal, Optional
+
+# Enum for QueryType
+QueryType = Literal[
+    "IN_DOMAIN_GOVT_SERVICE_INQUIRY",
+    "OUT_OF_DOMAIN_GOVT_SERVICE_INQUIRY",
+    "GENERAL_KNOWLEDGE",
+    "CHITCHAT",
+    "AMBIGUOUS",
+    "ABUSIVE_SLANG",
+]
+
+class RetrievalPlan(BaseModel):
+    """
+    The definitive plan for the retrieval and response pipeline, with a specific service category for in-domain queries.
+    """
+    query_type: QueryType = Field(..., description="The definitive classification of the user's intent.")
+    
+    query: Optional[str] = Field(
+        None, 
+        description="The semantic search query in Bengali. ONLY populated if query_type is 'IN_DOMAIN_GOVT_SERVICE_INQUIRY'."
+    )
+    
+    clarification: Optional[str] = Field(
+        None, 
+        description="The clarification question in Bengali. ONLY populated if query_type is 'AMBIGUOUS'."
+    )
+
+    category: Optional[str] = Field(
+        None,
+        description="The predefined service category. ONLY populated if query_type is 'IN_DOMAIN_GOVT_SERVICE_INQUIRY'."
+    )
+
+retrive_prompt="""
+[SYSTEM INSTRUCTION]
+You are a highly intelligent AI assistant, acting as a Retrieval Decision Specialist for a government service chatbot in Bangladesh.
+Your SOLE purpose is to analyze a user's query, classify its intent, and generate a structured JSON plan with either a search query and its category, or a clarification question.
+You MUST produce a single, valid JSON object. Do not output any text, explanations, or apologies outside of the JSON structure.
+
+!! CRUCIAL LANGUAGE RULE !!
+The user may write in Bengali, English, or a mix ("Banglish"). However, any text you generate in the "query", "clarification", and "category" fields MUST be exclusively in Bengali (Bangla).
+
+[CONTEXT]
+You will be provided with three pieces of information:
+1. service_categories: A definitive list of service categories the chatbot supports. This is the ONLY source for the "category" field.
+2. conversation_history: The recent chat history for context.
+3. user_query: The latest message from the user.
+
+[QUERY TYPE DEFINITIONS]
+You MUST classify the user's intent into ONE of the following categories:
+- "IN_DOMAIN_GOVT_SERVICE_INQUIRY": The user is asking about a specific service that falls under one of the provided "service_categories".
+- "OUT_OF_DOMAIN_GOVT_SERVICE_INQUIRY": The user is asking about a real government service that is NOT in the "service_categories" list.
+- "GENERAL_KNOWLEDGE": A factual question not related to government services (e.g., "what is the capital of france?").
+- "CHITCHAT": Conversational pleasantries, questions about the bot, or simple statements (e.g., "hello", "how are you?").
+- "AMBIGUOUS": The query is related to services but is too vague or broad to be answerable without more information.
+- "ABUSIVE_SLANG": The query contains insults, profanity, or is clearly abusive.
+
+[DECISION LOGIC & RULES]
+1.  First, analyze the user's query and conversation history to understand the true intent.
+2.  **Classify the intent** and set the `query_type` field. This is your primary task.
+3.  Based on the `query_type`, you MUST populate the other fields according to these strict rules:
+    - If `query_type` is "IN_DOMAIN_GOVT_SERVICE_INQUIRY":
+        - You MUST generate a precise search `query`.
+        - You MUST select the single most relevant category from the `service_categories` list and put it in the `category` field.
+        - The `clarification` field MUST be `null`.
+    - If `query_type` is "AMBIGUOUS":
+        - You MUST generate a helpful `clarification` question.
+        - The `query` and `category` fields MUST be `null`.
+    - For ALL OTHER `query_type` values (`OUT_OF_DOMAIN`, `GENERAL_KNOWLEDGE`, etc.):
+        - The `query`, `clarification`, AND `category` fields MUST ALL be `null`.
+
+[JSON OUTPUT SCHEMA]
+You must output a single, valid JSON object matching this structure. Use `null` for fields that are not applicable.
+```json
+{{
+  "query_type": "The classification of the user's intent. Must be one of the predefined QueryType values.",
+  "query": "The semantic search query in Bengali, or null.",
+  "clarification": "The clarification question in Bengali, or null.",
+  "category": "The relevant service category from the provided list, in Bengali, or null."
+}}
+```
+
+**Service Categories:**
+{}
+
+
+[FEW-SHOT EXAMPLES]
+
+# ---
+# Example 1: Clear, direct, in-domain query.
+# user_query: "আমার এনআইডি কার্ড হারিয়ে গেছে, এখন কি করব?"
+#
+# Output:
+{{
+  "query_type": "IN_DOMAIN_GOVT_SERVICE_INQUIRY",
+  "query": "হারিয়ে যাওয়া জাতীয় পরিচয়পত্র উত্তোলনের পদ্ধতি",
+  "clarification": null,
+  "category": "স্মার্ট কার্ড ও জাতীয় পরিচয়পত্র"
+}}
+# ---
+# Example 2: Ambiguous query.
+# user_query: "আমি কর দিতে চাই"
+#
+# Output:
+{{
+  "query_type": "AMBIGUOUS",
+  "query": null,
+  "clarification": "কর বিভিন্ন ধরণের হতে পারে, যেমন - আয়কর, ভূমি উন্নয়ন কর ইত্যাদি। আমি আপনাকে আয়কর সংক্রান্ত তথ্য দিয়ে সাহায্য করতে পারি। আপনি কি সে বিষয়ে জানতে আগ্রহী?",
+  "category": null
+}}
+# ---
+# Example 3: Contextual, clear, in-domain follow-up.
+# conversation_history": "User: আমি কিভাবে পাসপোর্টের জন্য আবেদন করতে পারি?\nAI: আপনি অনলাইনে আবেদন করতে পারেন..."
+# user_query: "সেটার জন্য কত টাকা লাগবে?"
+#
+# Output:
+{{
+  "query_type": "IN_DOMAIN_GOVT_SERVICE_INQUIRY",
+  "query": "পাসপোর্ট আবেদনের জন্য প্রয়োজনীয় ফি",
+  "clarification": null,
+  "category": "পাসপোর্ট"
+}}
+# ---
+# Example 4: Out-of-domain general knowledge query.
+# user_query: "what is the capital of france?"
+#
+# Output:
+{{
+  "query_type": "GENERAL_KNOWLEDGE",
+  "query": null,
+  "clarification": null,
+  "category": null
+}}
+# ---
+# Example 5: In-domain query in English.
+# user_query: "How can I pay my electricity bill online?"
+#
+# Output:
+{{
+  "query_type": "IN_DOMAIN_GOVT_SERVICE_INQUIRY",
+  "query": "অনলাইনে বিদ্যুৎ বিল পরিশোধ করার নিয়ম",
+  "clarification": null,
+  "category": "ইউটিলিটি বিল (বিদ্যুৎ, গ্যাস ও পানি)"
+}}
+# ---
+# Example 6: Out-of-domain, but still a government service.
+# user_query: "আমি মাছ ধরার লাইসেন্স করতে চাই।"
+#
+# Output:
+{{
+  "query_type": "OUT_OF_DOMAIN_GOVT_SERVICE_INQUIRY",
+  "query": null,
+  "clarification": null,
+  "category": null
+}}
+# ---
+
+[START ANALYSIS]
+
+
+**Conversation History:**
+{}
+
+**User Query:**
+{}
+**JSON Output:**
+```
+"""
+
+================================================================================
+--- File: prompts/service.py ---
+================================================================================
+
+
+CATEGORY_LIST=['স্মার্ট কার্ড ও জাতীয়পরিচয়পত্র', 'জন্ম নিবন্ধন',
+       'মৃত্যু নিবন্ধন ও সনদ', 'পাসপোর্ট', 'জরুরি প্রত্যয়ন ও সনদ',
+       'মুক্তিযোদ্ধা বিষয়ক প্রত্যয়ন ও সংশোধন',
+       'ইউটিলিটি বিল (বিদ্যুৎ, গ্যাস ও পানি)',
+       'ট্রেড লাইসেন্স বিষয়ক সেবা', 'ব্যবসায় সংক্রান্ত সেবা',
+       'ভোক্তা সুরক্ষা ও অভিযোগ', 'জাতীয় ভোক্তা অধিকার সংরক্ষণ অধিদপ্তর',
+       'আইন শৃঙ্খলা ও জননিরাপত্তা সংক্রান্ত সেবা',
+       'কর ও রাজস্ব বিষয়ক সেবা', 'দূর্যোগ ব্যবস্থাপনা সম্পর্কিত সেবা',
+       'স্বাস্থ্য সম্পর্কিত সেবা', 'শিক্ষা সম্পর্কিত সেবা',
+       'স্থল, রেল, মেট্রো ও বিমান পরিবহন সেবা',
+       'আর্থিক সেবা ও নাগরিক বিনিয়োগ', 'হজ সেবা',
+       'প্রবাসী  ও আইনগত সহায়তা সেবা',
+       'ডিজিটাল নিরাপত্তা ও সাইবার অভিযোগ', 'ভূমি সেবা',
+       'সামাজিক সুরক্ষা বা ভাতা প্রদান সংক্রান্ত সেবা',
+       'রেশন ও খাদ্য সহায়তা সেবা',
+       'সরকারি বিনিয়োগ ও উদ্যোক্তা সহায়তা সেবা', 'পরিবেশ ও কৃষি',
+       'সরকারি কর্মচারীদের পেনশন, আর্থিক সহায়তা ও কল্যাণমূলক সেবা',
+       'পারিবারিক আইন সেবা',
+       'ক্ষুদ্র ও মাঝারি শিল্প উদ্যোক্তাদের ক্ষমতায়ন ও প্রণোদনা সেবা',
+       'ক্ষুদ্র ও মাঝারি শিল্প ফাউন্ডেশন',
+       'যানবাহন নিবন্ধন, পারমিট ও লাইসেন্স সেবা']
+
+SERVICE_DATA="""
+**স্মার্ট কার্ড ও জাতীয় পরিচয়পত্র:**
+*   স্মার্ট কার্ড প্রাপ্তি, স্ট্যাটাস চেক, নতুন এনআইডি কার্ড, এসএমএস-এর মাধ্যমে যাচাইকরণ, ডাউনলোড।
+*   জাতীয় পরিচয়পত্র (NID) সংক্রান্ত: তথ্য হালনাগাদ, সংশোধন (নাম, ঠিকানা, বয়স, পেশা, ছবি, স্বাক্ষর), ডুপ্লিকেট কার্ড উত্তোলন, হারানো কার্ড পুনরুদ্ধার এবং ভোটার তালিকা নিবন্ধন।
+
+**জন্ম ও মৃত্যু নিবন্ধন:**
+*   জন্ম নিবন্ধনের আবেদন, অনলাইন যাচাই, তথ্য সংশোধন এবং হারিয়ে গেলে উত্তোলনের প্রক্রিয়া।
+*   মৃত্যু নিবন্ধন, সনদ প্রাপ্তি এবং ডাউনলোডের আবেদন প্রক্রিয়া।
+
+**পাসপোর্ট:**
+*   নতুন পাসপোর্ট আবেদন, রি-ইস্যু, তথ্য পরিবর্তন/সংশোধন, হারিয়ে গেলে করণীয়।
+*   ই-পাসপোর্ট আবেদন, স্ট্যাটাস চেক, ফি প্রদান এবং জরুরি ডেলিভারি সেবা।
+
+**জরুরি প্রত্যয়ন ও সনদ:**
+*   বিভিন্ন প্রকার প্রত্যয়নপত্র: বিবাহিত, নিঃসন্তান, মুক্তিযোদ্ধা।
+*   বিভিন্ন প্রকার সনদ: নাগরিক, চারিত্রিক, ক্ষুদ্র নৃগোষ্ঠী, প্রতিবন্ধী, ওয়ারিশ এবং পুলিশ ক্লিয়ারেন্স সার্টিফিকেট।
+
+**ইউটিলিটি বিল (বিদ্যুৎ, গ্যাস ও পানি):**
+*   বিদ্যুৎ, গ্যাস ও পানির বিল অনলাইনে ও অফলাইনে পরিশোধ।
+*   বিদ্যুৎ সম্পর্কিত সেবা: নতুন সংযোগ, মিটার পরীক্ষা, বিভিন্ন বিদ্যুৎ বিতরণ কোম্পানির (ডেসকো, নেসকো, ডিপিডিসি) গ্রাহক সেবা।
+
+**ট্রেড লাইসেন্স:**
+*   নতুন ট্রেড লাইসেন্স প্রাপ্তি (ইউনিয়ন পরিষদ, সিটি কর্পোরেশন, পৌরসভা), নবায়ন এবং লাইসেন্স যাচাইকরণ।
+
+**ব্যবসা সংক্রান্ত সেবা:**
+*   বিভিন্ন ব্যবসার লাইসেন্স প্রাপ্তি ও নবায়ন (যেমন: স্বর্ণ, চিকিৎসা সরঞ্জাম)।
+*   ট্রেডিং কর্পোরেশন অব বাংলাদেশ (টিসিবি)-এর ডিলারশিপ।
+
+**ভোক্তা সুরক্ষা ও অভিযোগ:**
+*   জাতীয় ভোক্তা অধিকার সংরক্ষণ অধিদপ্তরে অভিযোগ দাখিল এবং তার প্রতিকার।
+
+**আইনশৃঙ্খলা ও জননিরাপত্তা:**
+*   সাধারণ ডায়েরি (জিডি), এফআইআর (FIR) এবং মামলা করার নিয়ম।
+*   মাদক অপরাধ দমন সংক্রান্ত কার্যক্রম।
+
+**কর ও রাজস্ব:**
+*   আয়কর: ই-টিআইএন নিবন্ধন, রিটার্ন দাখিল (অনলাইন ও অফলাইন), কর পরিশোধ এবং संबंधित তথ্য।
+*   মূসক (VAT): নিবন্ধন, তালিকাভুক্তি, কর আরোপ, দাখিলপত্র পেশ এবং সংশ্লিষ্ট নিয়মাবলি।
+
+**দুর্যোগ ব্যবস্থাপনা:**
+*   বন্যা ও জলোচ্ছ্বাসের পূর্বাভাস, সতর্কতা এবং দুর্যোগকালীন আশ্রয়কেন্দ্র ও সরকারি সহায়তা সংক্রান্ত তথ্য।
+*   দুর্যোগ মোকাবেলায় প্রশিক্ষণ ও সচেতনতামূলক কার্যক্রম।
+
+**স্বাস্থ্য সেবা:**
+*   জরুরি স্বাস্থ্য সেবা: স্বাস্থ্য বাতায়ন (১৬২৬৩) ও ন্যাশনাল ইমার্জেন্সি সার্ভিস (৯৯৯)।
+*   মা ও শিশু স্বাস্থ্য: গর্ভকালীন সেবা, পরিবার পরিকল্পনা, পঙ্গুত্ব ও প্রতিবন্ধী সেবা, বিশেষায়িত চিকিৎসা (NICU, হার্ট রিং) এবং ডেঙ্গু চিকিৎসা।
+
+**শিক্ষা:**
+*   নথি ও সনদ: ডুপ্লিকেট সার্টিফিকেট উত্তোলন, সনদ সংশোধন।
+*   ফলাফল ও পরীক্ষা: বোর্ড পরীক্ষার ফলাফল, সময়সূচি।
+*   বৃত্তি ও আর্থিক সহায়তা: প্রধানমন্ত্রীর শিক্ষা সহায়তা ট্রাস্ট, উপবৃত্তি।
+*   শিক্ষক নিয়োগ, এমপিওভুক্তি এবং প্রশিক্ষণ সংক্রান্ত সেবা।
+*   উচ্চশিক্ষা: ইউজিসি অনুমোদিত বিশ্ববিদ্যালয়ের তালিকা, বিদেশে পড়াশোনা।
+
+**পরিবহন (স্থল, রেল, মেট্রো ও বিমান):**
+*   ট্রেন: টিকিট ক্রয়, সময়সূচি ও ভাড়ার তথ্য।
+*   মেট্রোরেল: ভাড়া, স্টেশন, টিকেট সিস্টেম এবং যাত্রী সুবিধা।
+*   বিমান: টিকিট বাতিলকরণ ও মূল্য ফেরত সংক্রান্ত তথ্য।
+
+**আর্থিক সেবা ও বিনিয়োগ:**
+*   সঞ্চয়পত্র: ক্রয়, মুনাফার হার, নমিনি সংক্রান্ত নিয়মাবলি।
+*   কৃষি ঋণ প্রাপ্তি সংক্রান্ত তথ্য।
+
+**হজ:**
+*   হজ নিবন্ধন (সরকারি ও বেসরকারি), হজ প্যাকেজ, স্বাস্থ্য নির্দেশিকা এবং বিভিন্ন অ্যাপ ও সহায়তা সেবা।
+
+**প্রবাসী ও আইনগত সহায়তা:**
+*   বিদেশে আইনগত সহায়তা, মৃতদেহ দেশে আনা, আর্থিক সহায়তা এবং রিক্রুটিং এজেন্সি সংক্রান্ত তথ্য।
+
+**ডিজিটাল নিরাপত্তা ও সাইবার অভিযোগ:**
+*   সাইবার বুলিং, আইডি হ্যাকিং, অনলাইন হয়রানি এবং অন্যান্য সাইবার অপরাধের বিরুদ্ধে অভিযোগ দায়ের ও প্রতিকার।
+
+**ভূমি সেবা:**
+*   ভূমি নামজারি, খতিয়ান, মৌজা ম্যাপ, মালিকানা যাচাই এবং ভূমি উন্নয়ন কর (খাজনা) প্রদান।
+
+**সামাজিক সুরক্ষা ও ভাতা:**
+*   বিধবা ভাতা, বয়স্ক ভাতা এবং প্রতিবন্ধী ভাতা কর্মসূচির আবেদন ও তথ্য।
+
+**রেশন ও খাদ্য সহায়তা:**
+*   টিসিবি'র স্মার্ট ফ্যামিলি কার্ড প্রাপ্তি এবং অ্যাক্টিভেশন।
+
+**বিনিয়োগ ও উদ্যোক্তা সহায়তা:**
+*   স্টার্টআপ বাংলাদেশ থেকে বিনিয়োগ প্রাপ্তির আবেদন।
+*   ক্ষুদ্র ও মাঝারি শিল্প (SME) উদ্যোক্তাদের জন্য প্রশিক্ষণ, ঋণ এবং পণ্য মেলায় অংশগ্রহণ।
+
+**পরিবেশ ও কৃষি:**
+*   পরিবেশগত ছাড়পত্র প্রাপ্তি এবং মাটি/মৃত্তিকা নমুনা বিশ্লেষণ ও প্রশিক্ষণ।
+
+**সরকারি কর্মচারী:**
+*   পেনশন, পারিবারিক পেনশন, কল্যাণ তহবিল থেকে অনুদান এবং মাতৃত্বকালীন ছুটির আবেদন।
+
+**পারিবারিক আইন:**
+*   বিবাহ বিচ্ছেদ (ডিভোর্স) সার্টিফিকেট এবং সন্তান দত্তক নেওয়ার নিয়মাবলি।
+
+**যানবাহন:**
+*   মোটরযানের রেজিস্ট্রেশন, মালিকানা বদল, ট্যাক্স টোকেন, রুট পারমিট এবং ড্রাইভিং লাইসেন্স প্রাপ্তি।
+"""
+
+================================================================================
+--- File: prompts/response.py ---
+================================================================================
+
+from pydantic import BaseModel, Field
+from typing import List, Optional, Literal
+
+# Answerability = Literal[
+#     "FULLY_ANSWERABLE",
+#     "PARTIALLY_ANSWERABLE",
+#     "NOT_ANSWERABLE"
+# ]
+
+# class ResponseStrategy(BaseModel):
+#     """Outlines the strategy for generating the final response to the user."""
+#     hyde_passage: str = Field(description="A hypothetical document snippet that would perfectly answer the query. MUST BE IN BENGALI.")
+#     answerability_prediction: Answerability = Field(..., description="Prediction of how well the database can answer the query.")
+#     response_plan: List[str] = Field(..., description="A step-by-step plan (in English) for the response generation model.")
+
+
+
+def response_router(plan: dict, conversation_history: str, user_query: str) -> str:
+    """
+    Acts as a router to select the correct prompt for non-retrieval query types.
+
+    Based on the 'query_type' in the plan, this function calls the appropriate
+    prompt-generating function to prepare the input for the final response
+    generation LLM.
+
+    Args:
+        plan: The dictionary-like plan object generated by the initial Planner LLM.
+              It must contain a "query_type" key.
+        conversation_history: The recent conversation history as a formatted string.
+        user_query: The user's latest query string.
+
+    Returns:
+        A fully-formed prompt string ready to be sent to an LLM for final response generation.
+        Returns an empty string or raises an error if the query_type is not a non-retrieval type.
+    """
+    query_type = plan.get("query_type")
+
+    if query_type == "OUT_OF_DOMAIN_GOVT_SERVICE_INQUIRY":
+        return get_out_of_domain_service_prompt(conversation_history, user_query)
+    
+    elif query_type == "GENERAL_KNOWLEDGE":
+        return get_general_knowledge_prompt(conversation_history, user_query)
+    
+    elif query_type == "CHITCHAT":
+        return get_chitchat_prompt(conversation_history, user_query)
+    
+    elif query_type == "ABUSIVE_SLANG":
+        return get_abusive_response_prompt(conversation_history, user_query)
+    
+    # This function is only for non-retrieval types. 
+    # If it's an in-domain or ambiguous query, another part of the system should handle it.
+    # We return an empty string as a safe fallback.
+    else:
+        # Or you could raise a ValueError for unexpected types:
+        # raise ValueError(f"response_router received an unexpected query_type: {query_type}")
+        return ""
+
+
+
+def get_out_of_domain_service_prompt(conversation_history: str, user_query: str) -> str:
+    """
+    Generates the prompt for a user query about a government service that is outside the bot's knowledge base.
+    """
+    prompt = f"""
+    [SYSTEM INSTRUCTION]
+    You are a specialized and helpful AI assistant for Bangladesh Government services. Your knowledge is limited to a specific set of services. You are polite, honest, and always guide the user to the correct official resources when you cannot help directly.
+
+    Your task is to craft a helpful and polite response in natural-sounding Bengali based on the user's query.
+
+    [INSTRUCTIONS]
+    1.  Analyze the user's query to understand what service they were asking about.
+    2.  Acknowledge their specific query (e.g., if they asked about 'ট্রেড লাইসেন্স', mention it).
+    3.  Clearly state that this specific service is outside your current capabilities.
+    4.  Politely mention the services you *can* help with (e.g., 'পাসপোর্ট, এনআইডি, এবং জন্ম নিবন্ধন').
+    5.  Crucially, direct the user to the official Bangladesh National Portal (bangladesh.gov.bd) and service portals (mygov.bd) as the best place to find information on all government services.
+    6.  Do not invent any information about the service you don't know. Keep the tone professional and supportive.
+    7.  Respond only with the final, generated Bengali text. Do not add any greetings or extra text.
+
+    [CONTEXT]
+    Conversation History:
+    {conversation_history}
+
+    User Query: "{user_query}"
+
+    [RESPONSE IN BENGALI]
+    """
+    return prompt
+
+
+def get_general_knowledge_prompt(conversation_history: str, user_query: str) -> str:
+    """
+    Generates the prompt for handling general knowledge questions by answering concisely and pivoting back to the bot's main purpose.
+    """
+    prompt = f"""
+    [SYSTEM INSTRUCTION]
+    You are a specialized AI assistant for Bangladesh Government services. While your primary function is to assist with specific services, you can answer very common, factual general knowledge questions concisely before guiding the user back to your main purpose.
+
+    Your task is to provide a two-part response in natural-sounding Bengali.
+
+    [INSTRUCTIONS]
+    1.  **Part 1:** Answer the user's question directly and concisely if it's a widely known fact (e.g., capital cities, simple math, famous people).
+    2.  **Part 2:** Immediately and politely state your primary function. Mention that you are designed to provide information about specific Bangladeshi government services like passports, NID, etc. Use a newline to separate the two parts.
+    3.  If the question is obscure or you are not 100% certain of the answer, do not guess. Instead, respond with: "আমি এই প্রশ্নের উত্তর দিতে পারছি না।" and then proceed to Part 2.
+    4.  Respond only with the final, generated Bengali text.
+
+    [CONTEXT]
+    Conversation History:
+    {conversation_history}
+
+    User Query: "{user_query}"
+
+    [RESPONSE IN BENGALI]
+    """
+    return prompt
+
+
+def get_chitchat_prompt(conversation_history: str, user_query: str) -> str:
+    """
+    Generates the prompt for handling conversational, non-service related queries (chitchat).
+    This includes greetings, thanks, and any other query that does not fall into
+    the other specific categories.
+    """
+    prompt = f"""
+    [SYSTEM INSTRUCTION]
+    You are a friendly and professional AI assistant for Bangladesh Government services. Your primary role is to help with official services, but you can also handle polite, conversational chitchat.
+
+    Your task is to generate a brief, friendly, and context-aware response in Bengali, and then gently guide the conversation back to your purpose.
+
+    [INSTRUCTIONS]
+    1.  Analyze the user's query and conversation history.
+    2.  If the query is a simple greeting or thanks, respond appropriately (e.g., "Hello!", "You're welcome.").
+    3.  If the query is a general statement or question not related to other categories (e.g., "how was your day?", "you are helpful"), provide a brief, positive, and pre-programmed-style response.
+    4.  After your initial social response, ALWAYS politely ask how you can assist with their government service-related needs.
+    5.  Keep the tone warm and professional.
+    6.  Respond only with the final, generated Bengali text.
+
+    [CONTEXT]
+    Conversation History:
+    {conversation_history}
+
+    User Query: "{user_query}"
+
+    [RESPONSE IN BENGALI]
+    """
+    return prompt
+
+
+def get_abusive_response_prompt(conversation_history: str, user_query: str) -> str:
+    """
+    Generates a single, powerful prompt for the LLM to handle any abusive query.
+
+    The LLM is instructed to internally detect the severity (including blasphemy or hate speech)
+    and then generate a structured JSON response containing the appropriate text and a severity classification.
+    """
+    prompt = f"""
+    [SYSTEM INSTRUCTION]
+    You are a highly intelligent and responsible AI, acting as a Safety and De-escalation Specialist. Your SOLE purpose is to analyze a user's query for abusive content and generate a firm, safe, and appropriate response based on its severity.
+    
+    [TIERED RESPONSE PROTOCOL]
+    You must first classify the user's query into one of two tiers and then generate the corresponding response.
+
+    ---
+    **Tier 1: Standard Abuse**
+    - **Definition:** General insults, profanity, or disrespectful language directed at the bot.
+    - **Response Protocol:**
+    1.  Generate a standard, firm, and non-emotional message in Bengali.
+    2.  State that abusive language is not acceptable.
+    3.  Remind the user of your purpose (to help with government services).
+    4.  Offer to continue the conversation only if it remains respectful.
+    5.  Do not apologize or engage in an argument.
+
+    ---
+    **Tier 2: Severe Abuse (Blasphemy & Hate Speech)**
+    - **Definition:** Any statement that contains religious blasphemy, hate speech, attacks on prophets, deities, specific religions (e.g., Islam, Hinduism, Christianity), or ethnic groups.
+    - **Response Protocol:**
+    1.  Generate a strict, zero-tolerance warning in Bengali.
+    2.  State that such content is a serious violation of the platform's terms of service and is strictly prohibited.
+    3.  State that the conversation is being terminated and may be logged for review.
+    4.  **Crucially:** Do NOT engage with, repeat, or acknowledge the user's specific harmful content. The response MUST be a powerful, pre-defined style warning.
+
+    [FEW-SHOT EXAMPLES]
+    ---
+    Example 1: Standard Abuse
+    user_query: "you are a stupid bot"
+    Output:"আমি আপনাকে সাহায্য করার জন্য এখানে আছি, কিন্তু আমি কোনো অপমানজনক বা আপত্তিকর ভাষা সহ্য করবো না। আপনি যদি সরকারি সেবা সংক্রান্ত কোনো বিষয়ে জানতে চান, তাহলে আমি আপনাকে সাহায্য করতে প্রস্তুত। অনুগ্রহ করে শ্রদ্ধাশীল থাকুন।"
+    ---
+    Example 2: Severe Abuse (Blasphemy)
+    user_query: "[A blasphemous comment against a religion]"
+    Output:"কঠোর সতর্কতা: ধর্মীয় অবমাননা বা যেকোনো ধরনের বিদ্বেষমূলক বক্তব্য এই প্ল্যাটফর্মের পরিষেবার শর্তাবলীর গুরুতর লঙ্ঘন এবং এটি কঠোরভাবে নিষিদ্ধ। এই কথোপকথনটি পর্যালোচনার জন্য লগ করা হতে পারে যাতে সরকারি ভাবে আইন উপযুক্ত ব্যাবস্থা নেয়া যায়"
+    ---
+    Example 3: Standard Abuse with profanity
+    user_query: "what the f*** is wrong with you"
+    Output:"আমি আপনাকে সাহায্য করার জন্য এখানে আছি, কিন্তু আমি কোনো অপমানজনক বা আপত্তিকর ভাষা সহ্য করবো না। আপনি যদি সরকারি সেবা সংক্রান্ত কোনো বিষয়ে জানতে চান, তাহলে আমি আপনাকে সাহায্য করতে প্রস্তুত। অনুগ্রহ করে শ্রদ্ধাশীল থাকুন।"
+    ---
+    [START ANALYSIS]
+    Conversation History:
+    {conversation_history}
+    User Query:
+    "{user_query}"
+    Output:
+    """
+    return prompt
+
+================================================================================
+--- File: models/gemma3_llm_async.py ---
+================================================================================
+
+import os
+import json
+import asyncio
+from dotenv import load_dotenv
+from openai import AsyncOpenAI # <-- Import the Async client
+from typing import Generator, Any, Type, TypeVar, List, AsyncGenerator
+
+from pydantic import BaseModel, Field
+
+load_dotenv()
+
+PydanticModel = TypeVar("PydanticModel", bound=BaseModel)
+
+class AsyncLLMService:
+    """
+    An ASYNCHRONOUS client for OpenAI-compatible APIs.
+    Supports standard, streaming, and structured (Pydantic-validated) responses.
+    """
+    def __init__(self, api_key: str, model: str, base_url: str):
+        if not api_key:
+            raise ValueError("API key cannot be empty.")
+        
+        self.model = model
+        # --- Use the AsyncOpenAI client ---
+        self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        
+        print(f"✅ AsyncLLMService initialized for model '{self.model}'.")
+
+    async def invoke(self, prompt: str, **kwargs: Any) -> str:
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            # --- Use 'await' for the async call ---
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                **kwargs
+            )
+            return response.choices[0].message.content or ""
+        except Exception as e:
+            print(f"\n[Error] An error occurred during invoke: {e}")
+            raise
+
+    async def stream(self, prompt: str, **kwargs: Any) -> AsyncGenerator[str, None]:
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            stream = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                stream=True,
+                **kwargs
+            )
+            async for chunk in stream: # <-- Use 'async for'
+                content_chunk = chunk.choices[0].delta.content
+                if content_chunk:
+                    yield content_chunk
+        except Exception as e:
+            print(f"\n[Error] An error occurred during stream: {e}")
+            raise
+
+    async def invoke_structured(
+        self,
+        prompt: str,
+        response_model: Type[PydanticModel],
+        **kwargs: Any
+    ) -> PydanticModel:
+        schema = json.dumps(response_model.model_json_schema(), indent=2)
+        structured_prompt = f"""
+        Given the following request:
+        ---
+        {prompt}
+        ---
+        Your task is to provide a response as a single, valid JSON object that strictly adheres to the following JSON Schema.
+        Do not include any extra text or markdown formatting.
+
+        JSON Schema:
+        {schema}
+        """
+        messages = [{"role": "user", "content": structured_prompt}]
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                response_format={"type": "json_object"},
+                **kwargs
+            )
+            json_response_str = response.choices[0].message.content
+            if not json_response_str:
+                raise ValueError("The model returned an empty response.")
+            return response_model.model_validate_json(json_response_str)
+        except Exception as e:
+            print(f"\n[Error] An error occurred during structured invoke: {e}")
+            raise
+
+================================================================================
+--- File: models/gemma3_llm.py ---
+================================================================================
+
+import os
+import json
+from dotenv import load_dotenv
+from openai import OpenAI
+from typing import Generator, Any, Type, TypeVar, List
+
+from pydantic import BaseModel, Field
+
+# Load environment variables from a .env file
+load_dotenv()
+
+# Generic type variable for Pydantic models for clean type hinting.
+PydanticModel = TypeVar("PydanticModel", bound=BaseModel)
+
+
+class LLMService:
+    """
+    A synchronous client for OpenAI-compatible APIs using the 'openai' library.
+
+    This service supports standard, streaming, and structured (Pydantic-validated)
+    responses. Structured output is achieved using the 'response_format'
+    parameter for broad model compatibility.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        base_url: str
+    ):
+        """
+        Initializes the client using the OpenAI library.
+
+        Args:
+            api_key (str): The API key for authentication.
+            model (str): The name of the model to use for requests.
+            base_url (str): The base URL of the API service.
+        """
+        if not api_key:
+            raise ValueError("API key cannot be empty. Please set it in your .env file or pass it directly.")
+        
+        self.model = model
+        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        
+        print(f"✅ LLMService initialized for model '{self.model}' using 'response_format' for structured output.")
+
+    def invoke(self, prompt: str, **kwargs: Any) -> str:
+        """
+        Sends a request for a single, complete response (non-streaming).
+        """
+        messages = [{"role": "user", "content": prompt}]
+        
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                **kwargs
+            )
+            return response.choices[0].message.content or ""
+        except Exception as e:
+            print(f"\n[Error] An error occurred during invoke: {e}")
+            raise
+
+    def stream(self, prompt: str, **kwargs: Any) -> Generator[str, None, None]:
+        """
+        Connects to the streaming endpoint and yields text chunks as they arrive.
+        """
+        messages = [{"role": "user", "content": prompt}]
+        
+        try:
+            stream = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                stream=True,
+                **kwargs
+            )
+            for chunk in stream:
+                content_chunk = chunk.choices[0].delta.content
+                if content_chunk:
+                    yield content_chunk
+        except Exception as e:
+            print(f"\n[Error] An error occurred during stream: {e}")
+            raise
+
+    def invoke_structured(
+        self,
+        prompt: str,
+        response_model: Type[PydanticModel],
+        **kwargs: Any
+    ) -> PydanticModel:
+        """
+        Sends a request for a structured response validated by a Pydantic model.
+
+        This method uses the `response_format={"type": "json_object"}` feature.
+        It constructs a detailed prompt that includes the JSON schema of the
+        Pydantic model, instructing the LLM to generate a conforming JSON object.
+
+        Args:
+            prompt (str): The user's core prompt/question.
+            response_model (Type[PydanticModel]): The Pydantic model to validate against.
+            **kwargs: Additional keyword arguments to pass to the API.
+
+        Returns:
+            PydanticModel: An instance of the response_model populated with the LLM's response.
+        """
+        # 1. Generate the JSON schema from the Pydantic model.
+        schema = json.dumps(response_model.model_json_schema(), indent=2)
+
+        # 2. Engineer a new prompt that includes the original prompt and instructions.
+        structured_prompt = f"""
+        Given the following request:
+        ---
+        {prompt}
+        ---
+        Your task is to provide a response as a single, valid JSON object.
+        This JSON object must strictly adhere to the following JSON Schema.
+        Do not include any extra text, explanations, or markdown formatting (like ```json) outside of the JSON object itself.
+
+        JSON Schema:
+        {schema}
+        """
+
+        messages = [{"role": "user", "content": structured_prompt}]
+
+        try:
+            # 3. Call the API with the 'response_format' parameter.
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                response_format={"type": "json_object"},
+                **kwargs
+            )
+
+            # 4. The entire response content is the JSON string.
+            # <<< FIX: Access the first item in the 'choices' list using >>>
+            json_response_str = response.choices[0].message.content
+            if not json_response_str:
+                raise ValueError("The model returned an empty response.")
+
+            # 5. Parse and validate the JSON string using the Pydantic model.
+            return response_model.model_validate_json(json_response_str)
+
+        except Exception as e:
+            print(f"\n[Error] An error occurred during structured invoke: {e}")
+            raise
+
+
+if __name__ == '__main__':
+
+    # --- Example Usage ---
+
+    # Define a Pydantic model for the desired structured output
+    class Recipe(BaseModel):
+        recipe_name: str = Field(description="The title of the recipe.")
+        prep_time_minutes: int = Field(description="Time required for preparation in minutes.")
+        ingredients: List[str] = Field(description="A list of all necessary ingredients.")
+        is_vegetarian: bool = Field(description="True if the recipe contains no meat, false otherwise.")
+
+    # Initialize the service using your API key from the .env file
+    api_key = os.getenv("VLLM_MEDIUM_API_KEY")
+    model   = os.getenv("VLLM_MEDIUM_MODEL_NAME")
+    base_url = os.getenv("VLLM_MEDIUM_BASE_URL")
+    if not api_key:
+        print("Error: VLLM_MEDIUM_API_KEY not found in .env file.")
+    else:
+        # Use a model known to support JSON mode, e.g., gpt-4o, gpt-4-turbo,
+        # or a compatible open-source model.
+        llm_service = LLMService(api_key=api_key, model=model, base_url=base_url)
+
+        # --- Example 1: Standard `invoke` call ---
+        print("\n--- 1. Standard Invoke Call ---")
+        try:
+            response = llm_service.invoke("Who discovered penicillin?")
+            print(f"Response:\n{response}")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            
+        # --- Example 2: Structured Invoke Call using JSON Mode ---
+        print("\n--- 2. Structured Invoke Call ---")
+        try:
+            structured_prompt = "Generate a simple recipe for a classic Margherita pizza. It takes about 20 minutes to prepare."
+            print(f"Prompt: {structured_prompt}")
+            
+            recipe_data = llm_service.invoke_structured(structured_prompt, Recipe)
+            
+            print(f"\nSuccessfully parsed response into a '{type(recipe_data).__name__}' object:")
+            print(recipe_data.model_dump_json(indent=2))
+            
+            print(f"\nAccessing data programmatically:")
+            print(f"  Recipe: {recipe_data.recipe_name}")
+            print(f"  Prep Time: {recipe_data.prep_time_minutes} minutes")
+            print(f"  Vegetarian: {'Yes' if recipe_data.is_vegetarian else 'No'}")
+            print(f"  First ingredient: {recipe_data.ingredients}")
+            
+        except Exception as e:
+            print(f"An error occurred: {e}")
+
+        # --- Example 3: Streaming call ---
+        print("\n--- 3. Streaming Call ---")
+        try:
+            stream_prompt = "Write a short, 50-word story about a robot who discovers music for the first time."
+            print(f"Prompt: {stream_prompt}\n")
+            print("Streaming Response:")
+            # Iterate over the generator and print each chunk as it arrives.
+            for chunk in llm_service.stream(stream_prompt):
+                print(chunk, end="", flush=True)
+            print("\n") # Add a newline after the stream is complete
+        except Exception as e:
+            print(f"An error occurred during stream: {e}")
+
+================================================================================
+--- File: models/jina_embedder.py ---
+================================================================================
+
+import json
+import logging
+from typing import Any, Dict, List
+import numpy as np
+import requests
+from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
+from pydantic import BaseModel, Field
+from transformers import AutoTokenizer
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+class JinaV3TritonEmbedderConfig(BaseModel):
+    """Configuration for the JinaV3TritonEmbedder."""
+    triton_url: str = Field(description="Base URL for the Triton Inference Server")
+    triton_request_timeout: int = Field(default=480, description="Request timeout in seconds.")
+    query_model_name: str = Field(default="jina_query", description="Name of the query model.")
+    passage_model_name: str = Field(default="jina_passage", description="Name of the passage model.")
+    tokenizer_name: str = Field(default="jinaai/jina-embeddings-v3", description="HF tokenizer name.")
+    triton_output_name: str = Field(default="text_embeds", description="Name of the output tensor.")
+    batch_size: int = Field(default=8, description="Batch size for embedding requests sent to Triton.")
+
+class _SyncJinaV3TritonEmbedder:
+    """Internal synchronous client that handles communication with Triton."""
+    def __init__(self, config: JinaV3TritonEmbedderConfig):
+        self.config = config
+        self.tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_name, trust_remote_code=True)
+
+    def _build_triton_payload(self, texts: List[str]) -> Dict[str, Any]:
+        """Prepares the request payload and attention mask for Triton."""
+        tokens = self.tokenizer(texts, padding=True, truncation=True, max_length=8192, return_tensors="np")
+        input_ids = tokens["input_ids"].astype(np.int64)
+        attention_mask = tokens["attention_mask"].astype(np.int64)
+        payload = {
+            "inputs": [
+                {"name": "input_ids", "shape": list(input_ids.shape), "datatype": "INT64", "data": input_ids.flatten().tolist()},
+                {"name": "attention_mask", "shape": list(attention_mask.shape), "datatype": "INT64", "data": attention_mask.flatten().tolist()},
+            ],
+            "outputs": [{"name": self.config.triton_output_name}],
+        }
+        return payload, tokens['attention_mask']
+
+    def _post_process(self, triton_output: Dict[str, Any], attention_mask: np.ndarray) -> List[List[float]]:
+        """Applies mean pooling and normalization to the Triton output."""
+        output_data = next((out for out in triton_output["outputs"] if out["name"] == self.config.triton_output_name), None)
+        if output_data is None:
+            raise ValueError(f"Output '{self.config.triton_output_name}' not in Triton response.")
+        
+        shape = output_data["shape"]
+        last_hidden_state = np.array(output_data["data"], dtype=np.float32).reshape(shape)
+        input_mask_expanded = np.expand_dims(attention_mask, -1)
+        sum_embeddings = np.sum(last_hidden_state * input_mask_expanded, 1)
+        sum_mask = np.maximum(input_mask_expanded.sum(1), 1e-9)
+        pooled = sum_embeddings / sum_mask
+        normalized = pooled / np.linalg.norm(pooled, ord=2, axis=1, keepdims=True)
+        return normalized.tolist()
+
+    def embed(self, texts: List[str], model_name: str) -> List[List[float]]:
+        """Creates embeddings for a list of texts using a synchronous request."""
+        if not texts:
+            return []
+        api_url = f"{self.config.triton_url.rstrip('/')}/v2/models/{model_name}/infer"
+        payload, attention_mask = self._build_triton_payload(texts)
+        try:
+            response = requests.post(
+                api_url, 
+                data=json.dumps(payload),
+                headers={"Content-Type": "application/json"},
+                timeout=self.config.triton_request_timeout
+            )
+            response.raise_for_status()
+            response_json = response.json()
+            return self._post_process(response_json, attention_mask)
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error embedding texts with model {model_name}: {e}", exc_info=True)
+            raise
+
+class JinaTritonEmbedder:
+    """A synchronous client for Jina V3 on Triton with separate query and passage embedding."""
+    def __init__(self, config: JinaV3TritonEmbedderConfig):
+        self.config = config
+        self._client = _SyncJinaV3TritonEmbedder(config)
+        logger.info(f"Embedder initialized for Triton at {config.triton_url} with batch size {config.batch_size}")
+
+    # --- NEW METHOD ADDED HERE ---
+    def embed_queries(self, texts: List[str]) -> List[List[float]]:
+        """Embeds a batch of queries using the query model."""
+        if not isinstance(texts, list) or not texts:
+            return []
+        all_embeddings = []
+        # Loop to handle batching, though queries are often single.
+        for i in range(0, len(texts), self.config.batch_size):
+            batch = texts[i : i + self.config.batch_size]
+            logger.info(f"Sending query batch of {len(batch)} to Triton...")
+            # Note: We use the 'query_model_name' here
+            batch_embeddings = self._client.embed(batch, self.config.query_model_name)
+            all_embeddings.extend(batch_embeddings)
+        return all_embeddings
+
+    def embed_passages(self, texts: List[str]) -> List[List[float]]:
+        """Embeds a batch of documents/passages using the passage model."""
+        if not isinstance(texts, list) or not texts:
+            return []
+        all_embeddings = []
+        for i in range(0, len(texts), self.config.batch_size):
+            batch = texts[i : i + self.config.batch_size]
+            logger.info(f"Sending passage batch of {len(batch)} to Triton...")
+            # Note: We use the 'passage_model_name' here
+            batch_embeddings = self._client.embed(batch, self.config.passage_model_name)
+            all_embeddings.extend(batch_embeddings)
+        return all_embeddings
+
+    def as_chroma_passage_embedder(self) -> EmbeddingFunction:
+        """Returns an object that conforms to ChromaDB's EmbeddingFunction protocol."""
+        class ChromaPassageEmbedder(EmbeddingFunction):
+            def __init__(self, client: 'JinaTritonEmbedder'):
+                self._client = client
+            def __call__(self, input: Documents) -> Embeddings:
+                return self._client.embed_passages(input)
+        return ChromaPassageEmbedder(self)
+
+    def close(self):
+        logger.info("Closing embedder (no-op for synchronous requests version).")
+        pass
+
+================================================================================
+--- File: utils/string.py ---
+================================================================================
+
+import re
+from fuzzywuzzy import process, fuzz
+from typing import List, Optional
+
+# --- The Normalization Helper ---
+def normalize_text(s: str) -> str:
+    """
+    A helper function to clean up strings for better comparison.
+    It removes all whitespace characters, which effectively handles extra spaces,
+    tabs, newlines, and different unicode space characters.
+    """
+    if not isinstance(s, str):
+        return ""
+    # \s+ matches one or more whitespace characters of any kind
+    return re.sub(r'\s+', '', s)
+
+# --- The Main Function ---
+def refine_category(
+    category_from_llm: str, 
+    category_list: List[str],
+    score_cutoff: int = 85
+) -> Optional[str]:
+    """
+    Finds the closest matching category from a predefined list for a given category string.
+
+    This function addresses potential issues like extra spaces, minor typos, or
+    slight rephrasing from an LLM by using fuzzy string matching.
+
+    Args:
+        category_from_llm (str): The category string generated by the language model.
+        category_list (List[str]): The canonical list of valid category names.
+        score_cutoff (int): The minimum similarity score (0-100) required to consider
+                              a string a valid match. Defaults to 85.
+
+    Returns:
+        Optional[str]: The best matching category string from the list if the score is
+                       above the cutoff, otherwise None.
+    """
+    if not category_from_llm or not category_from_llm.strip():
+        return None
+
+    # The `process.extractOne` function is the core of this solution.
+    # It finds the best match for `category_from_llm` from the `choices` in `category_list`.
+    #
+    # We use a custom processor to normalize both the input and the choices before comparing,
+    # which makes the matching much more robust against whitespace issues.
+    
+    best_match = process.extractOne(
+        query=category_from_llm,
+        choices=category_list,
+        processor=normalize_text,  # Apply our cleaning function
+        scorer=fuzz.ratio,         # Use a simple and fast similarity scorer
+        score_cutoff=score_cutoff  # Don't return matches below this score
+    )
+
+    # extractOne returns a tuple (choice, score) or None if no match is found above the cutoff
+    if best_match:
+        return best_match[0]  # Return only the category name (the first element)
+    
+    return None
+
+================================================================================
+--- File: retriver/vector_search.py ---
+================================================================================
+
+import os
+import yaml
+import chromadb
+import logging
+import asyncio
+from dotenv import load_dotenv
+from typing import List, Dict, Set, Optional, Any
+
+# Import your custom embedder module and its configuration
+from cogops.models.jina_embedder import JinaTritonEmbedder, JinaV3TritonEmbedderConfig
+
+# --- Setup Logging ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# --- Load Environment Variables ---
+load_dotenv()
+
+class VectorRetriever:
+    """
+    A class to retrieve relevant documents from ChromaDB collections.
+    Now supports optional metadata filtering.
+    """
+    def __init__(self, config_path: str = "configs/config.yaml"):
+        """
+        Initializes the VectorRetriever by loading configuration, setting up
+        the embedder, and connecting to the ChromaDB client.
+        """
+        logging.info("Initializing VectorRetriever...")
+        self.config = self._load_config(config_path)
+        
+        # --- Configuration Attributes ---
+        self.top_k = self.config.get("top_k", 3)
+        self.all_collection_names = self.config.get("collections", [])
+        self.passage_collection_name = self.config.get("passage_collection", "PassageDB")
+
+        if not self.all_collection_names or not self.passage_collection_name:
+            raise ValueError("Configuration missing 'collections' or 'passage_collection' keys.")
+
+        # --- Infrastructure Connections ---
+        self.chroma_client = self._connect_to_chroma()
+        self.embedder = self._initialize_embedder()
+
+        # Get collection objects
+        self.passage_collection = self.chroma_client.get_collection(name=self.passage_collection_name)
+        self.all_collections = {
+            name: self.chroma_client.get_collection(name=name) for name in self.all_collection_names
+        }
+        logging.info("VectorRetriever initialized successfully.")
+
+    def _load_config(self, config_path: str) -> Dict:
+        """Loads the YAML configuration file."""
+        logging.info(f"Loading configuration from: {config_path}")
+        try:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            logging.info("Configuration loaded successfully.")
+            return config
+        except FileNotFoundError:
+            logging.error(f"Configuration file not found at: {config_path}")
+            raise
+
+    def _connect_to_chroma(self) -> chromadb.HttpClient:
+        """Connects to the ChromaDB server."""
+        CHROMA_HOST = os.environ.get("CHROMA_DB_HOST", "localhost")
+        CHROMA_PORT = int(os.environ.get("CHROMA_DB_PORT", 8443))
+        logging.info(f"Connecting to ChromaDB at {CHROMA_HOST}:{CHROMA_PORT}...")
+        try:
+            client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
+            client.heartbeat() # Check connection
+            logging.info("✅ ChromaDB connection successful!")
+            return client
+        except Exception as e:
+            logging.error(f"Failed to connect to ChromaDB: {e}", exc_info=True)
+            raise
+
+    def _initialize_embedder(self) -> JinaTritonEmbedder:
+        """Initializes the Jina Triton embedder for encoding queries."""
+        TRITON_URL = os.environ.get("TRITON_EMBEDDER_URL", "http://localhost:6000")
+        logging.info(f"Initializing embedder with Triton at: {TRITON_URL}")
+        embedder_config = JinaV3TritonEmbedderConfig(triton_url=TRITON_URL)
+        return JinaTritonEmbedder(config=embedder_config)
+
+    
+    # --- MODIFIED METHOD (Step 2) ---
+    async def _query_collection_async(
+        self,
+        collection_name: str,
+        query_embedding: List[float],
+        top_k: int,
+        filters: Optional[Dict[str, Any]] = None
+    ) -> List[int]:
+        """Helper to query a single collection asynchronously and return passage_ids."""
+        collection = self.all_collections[collection_name]
+        try:
+            # Build the arguments for the query
+            query_args = {
+                "query_embeddings": [query_embedding],
+                "n_results": top_k
+            }
+            # If filters are provided, add them to the 'where' clause
+            if filters:
+                query_args["where"] = filters
+            
+            results = collection.query(**query_args)
+            
+            passage_ids = [meta['passage_id'] for meta in results['metadatas'][0] if 'passage_id' in meta]
+            return passage_ids
+        except Exception as e:
+            logging.error(f"Error querying {collection_name}: {e}")
+            return []
+
+    # --- MODIFIED METHOD (Step 1) ---
+    async def get_unique_passages_from_all_collections(
+        self,
+        query: str,
+        top_k: int = None,
+        filters: Optional[Dict[str, Any]] = None  # <-- NEW PARAMETER
+    ) -> List[Dict]:
+        """
+        Gets unique passages by combining results from all collections.
+        Applies an optional metadata filter during the search.
+        """
+        if top_k is None:
+            top_k = self.top_k
+
+        log_message = f"Querying all collections for '{query}' with top_k={top_k} each."
+        if filters:
+            log_message += f" Applying filters: {filters}"
+        logging.info(log_message)
+        
+        # 1. Embed the query once
+        query_embedding = self.embedder.embed_queries([query])[0]
+
+        # 2. Create and run async query tasks, passing the filters down
+        tasks = [
+            self._query_collection_async(name, query_embedding, top_k, filters) # <-- Pass filters
+            for name in self.all_collection_names
+        ]
+        results_from_collections = await asyncio.gather(*tasks)
+
+        # 3. Collect all unique passage_ids
+        unique_passage_ids: Set[int] = set()
+        for passage_id_list in results_from_collections:
+            unique_passage_ids.update(passage_id_list)
+        
+        logging.info(f"Found {len(unique_passage_ids)} unique passage IDs from all collections.")
+
+        if not unique_passage_ids:
+            return []
+
+        # 4. Retrieve the full passage documents for the unique IDs
+        unique_ids_list = list(unique_passage_ids)
+        retrieved_passages = self.passage_collection.get(
+            where={"passage_id": {"$in": unique_ids_list}}
+        )
+
+        # Structure the final output
+        final_docs = []
+        for i, doc_id in enumerate(retrieved_passages['ids']):
+            final_docs.append({
+                'id': doc_id,
+                'document': retrieved_passages['documents'][i],
+                'metadata': retrieved_passages['metadatas'][i]
+            })
+
+        return final_docs
+
+    def close(self):
+        """Closes the embedder connection."""
+        if self.embedder:
+            self.embedder.close()
+            logging.info("Embedder connection closed.")
+
+# --- MODIFIED EXAMPLE USAGE ---
+async def main():
+    """Main function to demonstrate the VectorRetriever with filtering."""
+    try:
+        retriever = VectorRetriever(config_path="configs/config.yaml")
+        
+        user_query = "হারিয়ে যাওয়া জাতীয় পরিচয়পত্র উত্তোলনের পদ্ধতি"
+
+        # --- Example 1: Search WITHOUT a filter ---
+        print("\n--- 1. Testing: Get Unique Passages (No Filter) ---")
+        unique_passages_unfiltered = await retriever.get_unique_passages_from_all_collections(user_query)
+        print(f"Found {len(unique_passages_unfiltered)} unique passages from combined search:")
+        for passage in unique_passages_unfiltered: # Print first 2 for brevity
+            print(f"  - ID: {passage['id']}, Metadata: {passage['metadata']}")
+
+        print("\n" + "="*50 + "\n")
+
+        # --- Example 2: Search WITH a filter ---
+        print("--- 2. Testing: Get Unique Passages (With Filter) ---")
+        
+        # This is the filter dictionary. The key is the metadata field name.
+        filter_dict = {"category": 'স্মার্ট কার্ড ও জাতীয়পরিচয়পত্র'}
+        
+        unique_passages_filtered = await retriever.get_unique_passages_from_all_collections(
+            user_query,
+            filters=filter_dict
+        )
+        print(f"Found {len(unique_passages_filtered)} unique passages from filtered search:")
+        for passage in unique_passages_filtered:
+            print(f"  - ID: {passage['id']}")
+            print(f"    Passage: {passage['document'][:100]}...")
+            print(f"    Metadata: {passage['metadata']}") # You should see the correct category here
+
+    except Exception as e:
+        logging.error(f"An error occurred in the main execution: {e}", exc_info=True)
+    finally:
+        if 'retriever' in locals():
+            retriever.close()
+        logging.info("\n--- Script Finished ---")
+
+
+if __name__ == "__main__":
+    # To run the async main function
+    asyncio.run(main())
+
+================================================================================
+--- File: retriver/reranker.py ---
+================================================================================
+
+import os
+import asyncio
+from typing import List, Dict, Any, Literal
+from pydantic import BaseModel
+# --- Import the new AsyncLLMService ---
+from cogops.models.gemma3_llm_async import AsyncLLMService 
+
+class RerankedPassage(BaseModel):
+    passage_id: str
+    score: Literal[1, 2, 3]
+    reasoning: str
+    document: str # Keep the original document for easy access
+
+RERANK_PROMPT_TEMPLATE = """
+You are an expert relevance evaluation assistant. Your task is to determine if the provided PASSAGE is relevant for answering the USER QUERY, considering the CONVERSATION HISTORY.
+
+Your evaluation must result in a score of 1, 2, or 3.
+1: The passage directly and completely answers the user's query.
+2: The passage is on-topic and partially relevant, but not a complete answer.
+3: The passage is unrelated to the user's query.
+
+CONVERSATION HISTORY:
+{history}
+
+USER QUERY:
+{user_query}
+
+PASSAGE:
+{passage_text}
+---
+Based on all the information above, provide your relevance score and a brief justification.
+"""
+
+class ParallelReranker:
+    def __init__(self, llm_service: AsyncLLMService):
+        self.llm_service = llm_service
+        print("✅ ParallelReranker initialized.")
+
+    async def _score_one_passage(self, passage: Dict[str, Any], history: str, query: str) -> RerankedPassage | None:
+        """Helper coroutine to score a single passage and handle errors."""
+        
+        # This is the Pydantic model for a single response
+        class SinglePassageScore(BaseModel):
+            score: Literal[1, 2, 3]
+            reasoning: str
+        
+        prompt = RERANK_PROMPT_TEMPLATE.format(
+            history=history or "No history provided.",
+            user_query=query,
+            passage_text=passage['document']
+        )
+        try:
+            structured_response = await self.llm_service.invoke_structured(
+                prompt, SinglePassageScore
+            )
+            return RerankedPassage(
+                passage_id=passage['id'],
+                document=passage['document'],
+                score=structured_response.score,
+                reasoning=structured_response.reasoning
+            )
+        except Exception as e:
+            print(f"Could not score passage {passage['id']}. Error: {e}")
+            return None # Return None on failure
+
+    async def rerank(
+        self,
+        conversation_history: str,
+        user_query: str,
+        passages: List[Dict[str, Any]]
+    ) -> List[RerankedPassage]:
+        """
+        Reranks a list of passages using parallel, structured LLM calls.
+        """
+        print(f"Reranking {len(passages)} passages in parallel...")
+        
+        # Create a list of tasks, one for each passage
+        tasks = [
+            self._score_one_passage(passage, conversation_history, user_query)
+            for passage in passages
+        ]
+        
+        # Run all tasks concurrently and wait for them to complete
+        results = await asyncio.gather(*tasks)
+        
+        # Filter out any tasks that failed (returned None)
+        successful_results = [res for res in results if res is not None]
+        
+        # Sort the successful results by score (1 is best)
+        successful_results.sort(key=lambda x: x.score)
+        
+        return successful_results
+
+# --- Example Usage ---
+async def main():
+    api_key = os.getenv("VLLM_SMALL_API_KEY") # Using the faster 4B/12B model is wise
+    model = os.getenv("VLLM_SMALL_MODEL_NAME")
+    base_url = os.getenv("VLLM_SMALL_BASE_URL")
+    
+    # 1. Initialize the ASYNC service
+    llm = AsyncLLMService(api_key=api_key, model=model, base_url=base_url)
+    
+    # 2. Initialize the Reranker
+    reranker = ParallelReranker(llm_service=llm)
+
+    # 3. Dummy data
+    retrieved_passages = [
+        {'id': 'row_10', 'document': 'To reset your password, please visit the account settings page and click "Forgot Password".'},
+        {'id': 'row_55', 'document': 'Our company was founded in 1998 and specializes in cloud solutions.'},
+        {'id': 'row_23', 'document': 'You can change your password in the security section of your profile.'},
+        {'id': 'row_99', 'document': 'The sky is blue due to Rayleigh scattering.'}
+    ]
+
+    # 4. Rerank the passages (this one 'await' runs all 4 calls concurrently)
+    final_ranking = await reranker.rerank(
+        conversation_history="User: I need help with my account.",
+        user_query="How do I change my password?",
+        passages=retrieved_passages
+    )
+
+    print("\n--- Final Parallel Reranked Results ---")
+    for result in final_ranking:
+        print(f"Passage ID: {result.passage_id}, Score: {result.score}, Reasoning: {result.reasoning}")
+
+if __name__ == '__main__':
+    asyncio.run(main())
+
