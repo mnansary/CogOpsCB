@@ -144,7 +144,7 @@ class ChatAgent:
             context = "\n\n".join([f"Passage ID: {p.passage_id}\nContent: {p.document}" for p in relevant_passages])
             answer_llm = self.task_models_async['answer_generator']
             answer_params = self.llm_call_params['answer_generator']
-            answer_prompt = SYNTHESIS_ANSWER_PROMPT.format(history=history_str, user_query=user_query, passages_context=context)
+            answer_prompt = ANSWER_GENERATION_PROMPT.format(history=history_str, user_query=user_query, passages_context=context)
             
             full_answer_list = []
             async for chunk in answer_llm.stream(answer_prompt, **answer_params):
