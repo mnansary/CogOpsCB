@@ -9,10 +9,11 @@ load_dotenv()
 
 # --- Prompt Imports ---
 from cogops.prompts.retrive import RetrievalPlan, retrive_prompt
-from cogops.prompts.service import CATEGORY_LIST
+from cogops.prompts.service import CATEGORY_LIST,SERVICE_DATA
 from cogops.prompts.response import response_router
 from cogops.prompts.answer import ANSWER_GENERATION_PROMPT
 from cogops.prompts.summary import SUMMARY_GENERATION_PROMPT
+from cogops.prompts.pivot import HELPFUL_PIVOT_PROMPT 
 
 # --- Core Component Imports ---
 from cogops.models.gemma3_llm import LLMService
@@ -112,9 +113,33 @@ class ChatAgent:
             reranker_params = self.llm_call_params['reranker']
             reranked = await self.reranker.rerank(history_str, user_query, retrieved, **reranker_params)
             relevant_passages = [p for p in reranked if p.score <= self.relevance_score_threshold]
+            # --- MODIFIED SECTION: What to do when no relevant passages are found ---
             if not relevant_passages:
-                yield {"type": "answer_chunk", "content": self.response_templates['no_relevant_passages_after_rerank']}
-                return
+                print("No highly relevant passages found. Generating a helpful pivot response.")
+                
+                # Use the responder model and its params for this generative task
+                responder_llm = self.task_models_async['non_retrieval_responder']
+                responder_params = self.llm_call_params['non_retrieval_responder']
+                
+                # Format the new pivot prompt
+                pivot_prompt = HELPFUL_PIVOT_PROMPT.format(
+                    history=history_str,
+                    user_query=user_query,
+                    category=refined_cat or "general services", # Fallback category text
+                    service_data=SERVICE_DATA
+                )
+
+                # Stream the dynamically generated pivot response
+                full_answer_list = []
+                async for chunk in responder_llm.stream(pivot_prompt, **responder_params):
+                    full_answer_list.append(chunk)
+                    yield {"type": "answer_chunk", "content": chunk}
+                
+                final_answer = "".join(full_answer_list).strip()
+                # IMPORTANT: Add this interaction to history
+                self.history.append((user_query, final_answer))
+                return # End the processing here for this query
+            # --- END MODIFIED SECTION ---
 
             context = "\n\n".join([f"Passage ID: {p.passage_id}\nContent: {p.document}" for p in relevant_passages])
             answer_llm = self.task_models_async['answer_generator']
@@ -145,12 +170,12 @@ class ChatAgent:
 
             yield {"type": "final_data", "content": {"sources": final_sources}}
 
-            # summarizer_llm = self.task_models_async['summarizer']
-            # summarizer_params = self.llm_call_params['summarizer']
-            # summary_prompt = SUMMARY_GENERATION_PROMPT.format(user_query=user_query, final_answer=final_answer)
-            # summary = await summarizer_llm.invoke(summary_prompt, **summarizer_params)
-            # self.history.append((user_query, summary.strip()))
-            self.history.append((user_query, final_answer.strip()))
+            summarizer_llm = self.task_models_async['summarizer']
+            summarizer_params = self.llm_call_params['summarizer']
+            summary_prompt = SUMMARY_GENERATION_PROMPT.format(user_query=user_query, final_answer=final_answer)
+            summary = await summarizer_llm.invoke(summary_prompt, **summarizer_params)
+            self.history.append((user_query, summary.strip()))
+            #self.history.append((user_query, final_answer.strip()))
 
         if len(self.history) > self.history_window:
             self.history.pop(0)
