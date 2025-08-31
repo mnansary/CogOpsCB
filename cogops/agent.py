@@ -11,7 +11,7 @@ load_dotenv()
 from cogops.prompts.retrive import RetrievalPlan, retrive_prompt
 from cogops.prompts.service import CATEGORY_LIST,SERVICE_DATA
 from cogops.prompts.response import response_router
-from cogops.prompts.answer import ANSWER_GENERATION_PROMPT
+from cogops.prompts.answer import ANSWER_GENERATION_PROMPT,SYNTHESIS_ANSWER_PROMPT 
 from cogops.prompts.summary import SUMMARY_GENERATION_PROMPT
 from cogops.prompts.pivot import HELPFUL_PIVOT_PROMPT 
 
@@ -125,7 +125,7 @@ class ChatAgent:
                 pivot_prompt = HELPFUL_PIVOT_PROMPT.format(
                     history=history_str,
                     user_query=user_query,
-                    category=refined_cat or "general services", # Fallback category text
+                    category=refined_cat,
                     service_data=SERVICE_DATA
                 )
 
@@ -144,7 +144,7 @@ class ChatAgent:
             context = "\n\n".join([f"Passage ID: {p.passage_id}\nContent: {p.document}" for p in relevant_passages])
             answer_llm = self.task_models_async['answer_generator']
             answer_params = self.llm_call_params['answer_generator']
-            answer_prompt = ANSWER_GENERATION_PROMPT.format(history=history_str, user_query=user_query, passages_context=context)
+            answer_prompt = SYNTHESIS_ANSWER_PROMPT.format(history=history_str, user_query=user_query, passages_context=context)
             
             full_answer_list = []
             async for chunk in answer_llm.stream(answer_prompt, **answer_params):

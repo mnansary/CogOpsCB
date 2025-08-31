@@ -76,7 +76,7 @@ llm_call_parameters:
     temperature: 0.2
     max_tokens: 512
   non_retrieval_responder:
-    temperature: 0.4
+    temperature: 0.2
     max_tokens: 1024
 
 # --- Response Templates ---
