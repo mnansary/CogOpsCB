@@ -21,7 +21,7 @@ RERANK_PROMPT_TEMPLATE = """
 You are an expert relevance evaluation assistant. Your task is to determine if the provided PASSAGE is relevant for answering the USER QUERY, considering the CONVERSATION HISTORY.
 
 Your evaluation must result in a score of 1, 2, or 3.
-1: The passage directly and completely answers the user's query.
+1: The passage directly and completely answers the user's query and provides additional context.
 2: The passage is on-topic and partially relevant, but not a complete answer.
 3: The passage is unrelated to the user's query.
 

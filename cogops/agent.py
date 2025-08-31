@@ -145,11 +145,12 @@ class ChatAgent:
 
             yield {"type": "final_data", "content": {"sources": final_sources}}
 
-            summarizer_llm = self.task_models_async['summarizer']
-            summarizer_params = self.llm_call_params['summarizer']
-            summary_prompt = SUMMARY_GENERATION_PROMPT.format(user_query=user_query, final_answer=final_answer)
-            summary = await summarizer_llm.invoke(summary_prompt, **summarizer_params)
-            self.history.append((user_query, summary.strip()))
+            # summarizer_llm = self.task_models_async['summarizer']
+            # summarizer_params = self.llm_call_params['summarizer']
+            # summary_prompt = SUMMARY_GENERATION_PROMPT.format(user_query=user_query, final_answer=final_answer)
+            # summary = await summarizer_llm.invoke(summary_prompt, **summarizer_params)
+            # self.history.append((user_query, summary.strip()))
+            self.history.append((user_query, final_answer.strip()))
 
         if len(self.history) > self.history_window:
             self.history.pop(0)
