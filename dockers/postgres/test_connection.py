@@ -2,7 +2,7 @@ import psycopg2
 
 # --- IMPORTANT ---
 # Replace the placeholder text below with the actual password you saved in Step 2.
-DB_PASSWORD = "zi05+NLuM+x6LIOOTJ5G+YM/P91w+VlVFxVwGWsX6O0="
+DB_PASSWORD = "YOUR_SUPER_SECRET_PASSWORD"
 
 print("Attempting to connect to local PostgreSQL server...")
 
