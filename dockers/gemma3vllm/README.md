@@ -188,3 +188,32 @@ You can test the OpenAI-compatible endpoint using a `curl` command.
     ```
 
 If the setup is successful, you will receive a JSON response from the model with the answer. You now have a robust, secure, and easily manageable LLM inference server.
+
+## IMPORTANT
+
+Based on device and variation small medium  can change
+
+```ini
+    command: >
+      --model RedHatAI/gemma-3-4b-it-FP8-dynamic
+      --host 0.0.0.0
+      --port 8000
+      --max-model-len 16384
+      --gpu-memory-utilization 0.87
+      --guided-decoding-backend xgrammar
+      --trust-remote-code
+      --max-num-seqs 4 
+      --max-num-batched-tokens 8192
+      --api-key ${VLLM_API_KEY}
+
+    # command: > Medium
+    #   --model RedHatAI/gemma-3-27b-it-FP8-dynamic
+    #   --host 0.0.0.0
+    #   --port 8000
+    #   --max-model-len 131072
+    #   --gpu-memory-utilization 0.95
+    #   --guided-decoding-backend xgrammar
+    #   --trust-remote-code
+    #   --api-key ${VLLM_API_KEY}
+
+```

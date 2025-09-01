@@ -6,7 +6,7 @@
 # -----------------------------------------------------------------
 
 # The name of the collection to create or use in ChromaDB
-collection_name: "KeywordDB"
+collection_name: "PassageDB"
 
 # Relative or absolute path to the input CSV file
 csv_file_path: "/home/vpa/Downloads/data/master_data_20250830.csv"
@@ -14,7 +14,7 @@ csv_file_path: "/home/vpa/Downloads/data/master_data_20250830.csv"
 # --- Data Mapping ---
 
 # The column in the CSV containing the document text to embed
-content_column: "keyword" 
+content_column: "passage" 
 
 # A list of columns from the CSV to store as metadata.
 # Each of these columns must exist in the CSV file.

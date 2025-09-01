@@ -3,62 +3,76 @@
 # ===================================================================
 
 # --- LLM Service Definitions ---
-# Define the available LLM services (e.g., different model sizes or providers).
-# The agent will load these services and map them to tasks below.
-# Values ending in '_env' specify the NAME of the environment variable to load.
+# Define the available LLM services.
 llm_services:
   small_llm:
     api_key_env: "VLLM_SMALL_API_KEY"
     model_name_env: "VLLM_SMALL_MODEL_NAME"
     base_url_env: "VLLM_SMALL_BASE_URL"
+    max_context_tokens: 16384
   medium_llm:
     api_key_env: "VLLM_MEDIUM_API_KEY"
     model_name_env: "VLLM_MEDIUM_MODEL_NAME"
     base_url_env: "VLLM_MEDIUM_BASE_URL"
+    max_context_tokens: 131072
 
 # --- Task-to-Model Mapping ---
 # Assign a defined LLM service to each specific task in the pipeline.
-# This allows you to use faster/cheaper models for simple tasks (like reranking)
-# and more powerful models for complex tasks (like final answer generation).
 task_to_model_mapping:
-  retrieval_plan: "medium_llm"    # Use medium model for robust JSON generation and intent classification.
-  reranker: "small_llm"           # Use small, fast model for parallel passage scoring.
-  answer_generator: "medium_llm"  # Use medium model for high-quality, nuanced final answers.
-  summarizer: "small_llm"         # Use small, fast model for concise history summarization.
-  non_retrieval_responder: "medium_llm" # Use medium model for better conversational ability.
+  retrieval_plan: "medium_llm"
+  reranker: "small_llm"
+  answer_generator: "medium_llm"
+  summarizer: "small_llm"
+  non_retrieval_responder: "medium_llm"
 
 # --- Conversation Management ---
 conversation:
-  # The number of recent user-AI turns to keep in the conversation history.
-  # This acts as a rolling window to maintain context.
   history_window: 3
 
 # --- Vector Retriever Configuration ---
 vector_retriever:
-  # Number of top results to retrieve from EACH collection during the initial search.
-  top_k: 3
-  # A list of all vector collection names to be queried.
+  top_k: 10
   collections:
     - "PassageDB"
     - "TopicDB"
     - "KeywordDB"
-  # The name of the primary collection that contains the full passage content.
   passage_collection: "PassageDB"
+  max_passages_to_rerank: 4
+  # --- Reciprocal Rank Fusion (RRF) constant.
+  # A standard value is 60. Lower values give more weight to items that appear
+  # in the top ranks, while higher values spread the weight more evenly.
+  rrf_k: 60
+  passage_id_meta_key: "passage_id"
 
 # --- Reranker Configuration ---
 reranker:
-  # The score threshold for a passage to be considered "highly relevant".
-  # In the current setup, 1=Relevant, 2=Partial, 3=Irrelevant.
-  # Setting this to 1 means only the most directly relevant passages are used.
   relevance_score_threshold: 1
 
 # --- Category Refinement Configuration ---
-# Parameters for the fuzzy string matching used to align the LLM's category
-# output with the canonical list of service categories.
 category_refinement:
-  # The minimum similarity score (0-100) required to consider a string a valid match.
-  # A value of 85-90 is usually a good balance between flexibility and accuracy.
   score_cutoff: 85
+
+# --- NEW: Concurrency Control ---
+concurrency_control:
+  # The maximum number of reranker LLM calls that can run at the same time.
+  # A value between 3-5 is a safe starting point for a single GPU.
+  reranker_concurrency_limit: 2
+
+# --- NEW: Token Management ---
+# Centralized configuration for prompt building and truncation logic.
+token_management:
+  # The Hugging Face model name for the tokenizer used to count tokens.
+  # This should be a model from the same family as the ones being used.
+  tokenizer_model_name: "google/gemma-3-4b-it"
+  
+  # A safety margin (as a decimal percentage) to reserve for the prompt's
+  # static text (instructions, boilerplate) when calculating available tokens.
+  prompt_template_reservation_tokens: 200
+
+  # When truncating components, this defines the budget allocation (as a decimal).
+  # This value means up to 40% of the *remaining* token budget will be used for history.
+  # The rest will be allocated to the passages or other variable content.
+  history_truncation_budget: 0.4 # Allocate 40% of available space to history
 
 # --- LLM Call Parameters ---
 # Fine-grained control over the generation parameters for each LLM task.
@@ -80,8 +94,7 @@ llm_call_parameters:
     max_tokens: 1024
 
 # --- Response Templates ---
-# Canned responses for specific scenarios. Centralizing them here makes it easy
-# to edit the bot's personality without changing the code.
+# Canned responses for specific scenarios.
 response_templates:
   error_fallback: "Sorry, I encountered an unexpected error. Please try asking again."
   plan_generation_failed: "I'm having trouble understanding your request at the moment. Could you please rephrase it?"
