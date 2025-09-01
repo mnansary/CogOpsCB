@@ -67,7 +67,7 @@ token_management:
   
   # A safety margin (as a decimal percentage) to reserve for the prompt's
   # static text (instructions, boilerplate) when calculating available tokens.
-  prompt_template_reservation_tokens: 200
+  prompt_template_reservation_tokens: 500
 
   # When truncating components, this defines the budget allocation (as a decimal).
   # This value means up to 40% of the *remaining* token budget will be used for history.
@@ -96,7 +96,7 @@ llm_call_parameters:
 # --- Response Templates ---
 # Canned responses for specific scenarios.
 response_templates:
-  error_fallback: "Sorry, I encountered an unexpected error. Please try asking again."
+  error_fallback: "Sorry, I encountered an unexpected error within Network and server. Please try later"
   plan_generation_failed: "I'm having trouble understanding your request at the moment. Could you please rephrase it?"
   no_passages_found: " দুঃখিত, আমি এই মুহূর্তে আপনার অনুরোধ সম্পর্কিত কোনো তথ্য খুঁজে পাচ্ছি না।"
   no_relevant_passages_after_rerank: "আমি আপনার বিষয়টি সম্পর্কিত কিছু তথ্য পেয়েছি, কিন্তু সুস্পষ্ট উত্তর খুঁজে পাইনি। আপনি কি আপনার প্রশ্নটি আরেকটু বিস্তারিতভাবে বলতে পারেন?"

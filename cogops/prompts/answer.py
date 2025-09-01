@@ -24,7 +24,7 @@ You are a helpful and precise AI assistant for Bangladesh Government services. Y
 
 [CONTEXT]
 **Conversation History:**
-{history}
+{history_str}
 
 **User Query:**
 {user_query}
@@ -89,7 +89,7 @@ You are an intelligent, empathetic, and precise AI assistant for Bangladesh Gove
 [CONTEXT FOR THIS TASK]
 
 **Conversation History:**
-{history}
+{history_str}
 
 **User Query:**
 {user_query}

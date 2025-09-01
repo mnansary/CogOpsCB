@@ -10,31 +10,9 @@ from pydantic import BaseModel
 # --- Core Component Imports ---
 from cogops.models.gemma3_llm_async import AsyncLLMService, ContextLengthExceededError
 from cogops.utils.token_manager import TokenManager
-
+from cogops.prompts.reranking import RERANK_PROMPT_TEMPLATE
 # --- Main Prompt Template ---
 # MODIFIED: Added {search_query} for more precise context.
-RERANK_PROMPT_TEMPLATE = """
-You are an expert relevance evaluation assistant. Your task is to determine if the provided PASSAGE is relevant for answering the user's intent, considering the CONVERSATION HISTORY and the specific SEARCH QUERY used for retrieval.
-
-Your evaluation must result in a score of 1, 2, or 3.
-1: The passage directly and completely answers the user's query and provides additional context. 
-2: The passage is on-topic and partially relevant, but not a complete answer. 
-3: The passage is unrelated to the user's query.
-
-CONVERSATION HISTORY:
-{history_str}
-
-USER QUERY (Natural Language):
-{user_query}
-
-SEARCH QUERY (Used for Retrieval):
-{search_query}
-
-PASSAGE TO EVALUATE:
-{passage_text}
----
-Based on all the information above, provide your relevance score and a brief justification.
-"""
 
 # --- Data Models ---
 class RerankedPassage(BaseModel):
