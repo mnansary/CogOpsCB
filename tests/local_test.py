@@ -5,11 +5,11 @@ import json
 
 # --- CONFIGURATION ---
 # The client now ONLY needs to know the gateway's address.
-GATEWAY_URL = "http://localhost:24434"  # <-- CHANGE HERE: Point to your gateway's port
+GATEWAY_URL = "http://localhost:9000"  # <-- CHANGE HERE: Point to your gateway's port
 
 # Construct the full endpoint URLs by adding the gateway prefix.
-CHAT_API_ENDPOINT = f"{GATEWAY_URL}/govtchat/chat/stream"      # <-- CHANGE HERE
-CLEAR_API_ENDPOINT = f"{GATEWAY_URL}/govtchat/chat/clear_session" # <-- CHANGE HERE
+CHAT_API_ENDPOINT = f"{GATEWAY_URL}/chat/stream"      # <-- CHANGE HERE
+CLEAR_API_ENDPOINT = f"{GATEWAY_URL}/chat/clear_session" # <-- CHANGE HERE
 
 # --- Conversation with User 1 ---
 user_1_id = "user-alex-123"
