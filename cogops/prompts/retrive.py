@@ -155,6 +155,32 @@ You must output a single, valid JSON object matching this structure. Use `null` 
   "category": null
 }}
 # ---
+# Example 7: Contextual follow-up about current topic from a previous answer when there is something missing but its information is present in the services. 
+# conversation_history": "User: আমার জন্ম নিবন্ধন করা প্রয়োজন।\nAI: জন্ম নিবন্ধনের জন্য প্রয়োজনীয় কাগজপত্র, যেমন বাসার হোল্ডিং ট্যাক্সের রশিদ, সহ ইউনিয়ন পরিষদ অফিসে জমা দিতে হবে।"
+# user_query: "কিন্তু আমাদের হোল্ডিং ট্যাক্সের রশিদ নেই।"
+#
+# Output:
+{{
+  "query_type": "AMBIGUOUS",
+  "query": null,
+  "clarification": "আমি বুঝতে পেরেছি আপনার কাছে হোল্ডিং ট্যাক্সের রশিদ নেই। আপনি কি হোল্ডিং ট্যাক্সের রশিদ কিভাবে সংগ্রহ করতে হয় তা জানতে চাচ্ছেন, নাকি এটি ছাড়া জন্ম নিবন্ধনের আবেদন করার কোনো বিকল্প উপায় আছে কিনা সে সম্পর্কে জানতে আগ্রহী?",
+  "category": null
+}}
+# ---
+# ---
+# Example 8: User reports a problem with a specific step from the AI's previous answer.
+# conversation_history": "User: How do I register for e-Return?\nAI: To register for e-Return, go to the website, enter your TIN and mobile number. You will receive a 6-digit OTP on your mobile."
+# user_query: "I'm not getting the 6-digit OTP on my mobile."
+#
+# Output:
+{{
+  "query_type": "IN_DOMAIN_GOVT_SERVICE_INQUIRY",
+  "query": "অনলাইনে আয়কর রিটার্ন দাখিলের জন্য রেজিস্ট্রেশনের সময় ওটিপি না আসলে করণীয়",
+  "clarification": null,
+  "category": "কর ও রাজস্ব বিষয়ক সেবা"
+}}
+# ---
+# ---
 
 [START ANALYSIS]
 

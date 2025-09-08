@@ -76,6 +76,7 @@ class ChatAgent:
         # Load other configurations
         self.relevance_score_threshold = self.config['reranker']['relevance_score_threshold']
         self.history: List[Tuple[str, str]] = []
+        self.raw_history: List[Tuple[str, str]] = []
         self.history_window = self.config['conversation']['history_window']
         self.llm_call_params = self.config['llm_call_parameters']
         self.response_templates = self.config['response_templates']
@@ -108,17 +109,18 @@ class ChatAgent:
         logging.info("LLM services are ready.")
 
     def _format_history_for_planner(self) -> str:
-        if not self.history: return "No conversation history yet."
-        return "\n---\n".join([f"User: {u}\nAI: {a}" for u, a in self.history])
+        """
+        MODIFIED: This now uses the raw, unabridged history to give the planner
+        maximum context for understanding follow-up questions.
+        """
+        if not self.raw_history: return "No conversation history yet."
+        return "\n---\n".join([f"User: {u}\nAI: {a}" for u, a in self.raw_history])
 
     async def process_query(self, user_query: str) -> AsyncGenerator[Dict[str, Any], None]:
         logging.info(f"\n--- New Query Received: '{user_query}' ---")
         
-        # --- NEW: Centralized Error Handling Block ---
-        # This block wraps the entire query processing pipeline. If any external
-        # service (LLM, DB, Embedder) fails with a network-related error,
-        # it will be caught here, and a user-friendly message will be sent.
         try:
+            # This call now uses the raw history via the updated method
             history_str_planner = self._format_history_for_planner()
 
             # --- 1. Generate Retrieval Plan ---
@@ -130,7 +132,9 @@ class ChatAgent:
 
             # --- 2. Route Query Based on Plan ---
             if plan.query_type == "AMBIGUOUS" and plan.clarification:
+                # For short interactions, raw and summarized histories are the same.
                 self.history.append((user_query, plan.clarification))
+                self.raw_history.append((user_query, plan.clarification))
                 for char in plan.clarification:
                     yield {"type": "answer_chunk", "content": char}
                     await asyncio.sleep(0.01)
@@ -143,7 +147,9 @@ class ChatAgent:
                 prompt = response_router(plan.model_dump(), history_str_planner, user_query)
                 full_answer = "".join([chunk async for chunk in responder_llm.stream(prompt, **responder_params)])
                 yield {"type": "answer_chunk", "content": full_answer}
+                # For short interactions, raw and summarized histories are the same.
                 self.history.append((user_query, full_answer))
+                self.raw_history.append((user_query, full_answer))
 
             elif plan.query_type == "IN_DOMAIN_GOVT_SERVICE_INQUIRY":
                 # --- 3. Retrieval ---
@@ -166,13 +172,17 @@ class ChatAgent:
                     responder_llm = self.task_models_async['non_retrieval_responder']
                     responder_params = self.llm_call_params['non_retrieval_responder']
                     pivot_prompt = HELPFUL_PIVOT_PROMPT.format(
-                                    history_str=history_str_planner, # <-- Use the already formatted history string
+                                    history_str=history_str_planner, 
                                     user_query=user_query, 
                                     category=refined_cat, 
                                     service_data=SERVICE_DATA
                                     )
-                    full_answer = "".join([chunk async for chunk in responder_llm.stream(pivot_prompt, **responder_params)])
-                    yield {"type": "answer_chunk", "content": full_answer}
+                    full_answer_list = []
+                    async for chunk in responder_llm.stream(pivot_prompt, **responder_params):
+                        full_answer_list.append(chunk)
+                        yield {"type": "answer_chunk", "content": chunk}
+                    full_answer = "".join(full_answer_list)
+                    self.raw_history.append((user_query, full_answer))
                     self.history.append((user_query, full_answer))
                     return
 
@@ -199,14 +209,20 @@ class ChatAgent:
                 final_sources = sorted(list(unique_urls)) + sorted(list(unique_passage_ids))
                 yield {"type": "final_data", "content": {"sources": final_sources}}
 
+                # MODIFIED: Populate the two history lists with different content
+                self.raw_history.append((user_query, final_answer))
+
                 summarizer_llm = self.task_models_async['summarizer']
                 summarizer_params = self.llm_call_params['summarizer']
                 summary_prompt = SUMMARY_GENERATION_PROMPT.format(user_query=user_query, final_answer=final_answer)
                 summary = await summarizer_llm.invoke(summary_prompt, **summarizer_params)
                 self.history.append((user_query, summary.strip()))
 
+            # MODIFIED: Truncate both history lists to keep them in sync
             if len(self.history) > self.history_window:
                 self.history.pop(0)
+            if len(self.raw_history) > self.history_window:
+                self.raw_history.pop(0)
 
         except (APIConnectionError, APITimeoutError, RequestException) as e:
             # --- CATCH BLOCK for Service Unavailability ---
