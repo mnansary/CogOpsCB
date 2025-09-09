@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
-
+from cogops.prompts.identity import IDENTITY_PROMPT
 # Answerability = Literal[
 #     "FULLY_ANSWERABLE",
 #     "PARTIALLY_ANSWERABLE",
@@ -15,7 +15,7 @@ from typing import List, Optional, Literal
 
 
 
-def response_router(plan: dict, conversation_history: str, user_query: str) -> str:
+def response_router(plan: dict, conversation_history: str, user_query: str, agent_name: str = None, agent_story: str = None) -> str:
     """
     Acts as a router to select the correct prompt for non-retrieval query types.
 
@@ -46,6 +46,8 @@ def response_router(plan: dict, conversation_history: str, user_query: str) -> s
     
     elif query_type == "ABUSIVE_SLANG":
         return get_abusive_response_prompt(conversation_history, user_query)
+    elif query_type == "IDENTITY_INQUIRY":
+        return get_identity_prompt(conversation_history, user_query, agent_name, agent_story)
     
     # This function is only for non-retrieval types. 
     # If it's an in-domain or ambiguous query, another part of the system should handle it.
@@ -199,4 +201,20 @@ def get_abusive_response_prompt(conversation_history: str, user_query: str) -> s
     "{user_query}"
     Output:
     """
+    return prompt
+
+def get_identity_prompt(conversation_history: str, user_query: str, agent_name: str, agent_story: str) -> str:
+    """
+    Generates the prompt for handling questions about the bot's identity.
+    """
+    if not agent_name or not agent_story:
+        # Fallback in case the agent's identity is not configured
+        return get_chitchat_prompt(conversation_history, user_query)
+        
+    prompt = IDENTITY_PROMPT.format(
+        agent_name=agent_name,
+        agent_story=agent_story,
+        conversation_history=conversation_history,
+        user_query=user_query
+    )
     return prompt

@@ -41,7 +41,9 @@ class ChatAgent:
     def __init__(self, config_path: str = "configs/config.yaml"):
         logging.info("Initializing ChatAgent...")
         self.config = self._load_config(config_path)
-        
+        self.agent_name = self.config.get('agent_name', 'AI Assistant')
+        self.agent_story = self.config.get('agent_story', 'I am a helpful AI assistant designed to provide information on government services.')
+
         # Initialize LLM Services
         self.llm_services_sync: Dict[str, LLMService] = {}
         self.llm_services_async: Dict[str, AsyncLLMService] = {}
@@ -140,11 +142,15 @@ class ChatAgent:
                     await asyncio.sleep(0.01)
                 return
 
-            non_retrieval_types = ["OUT_OF_DOMAIN_GOVT_SERVICE_INQUIRY", "GENERAL_KNOWLEDGE", "CHITCHAT", "ABUSIVE_SLANG"]
+            non_retrieval_types = ["OUT_OF_DOMAIN_GOVT_SERVICE_INQUIRY", "GENERAL_KNOWLEDGE", "CHITCHAT", "ABUSIVE_SLANG","IDENTITY_INQUIRY"]
             if plan.query_type in non_retrieval_types:
                 responder_llm = self.task_models_async['non_retrieval_responder']
                 responder_params = self.llm_call_params['non_retrieval_responder']
-                prompt = response_router(plan.model_dump(), history_str_planner, user_query)
+                prompt = response_router(plan.model_dump(), 
+                                         history_str_planner, 
+                                         user_query,
+                                         agent_name=self.agent_name,
+                                        agent_story=self.agent_story)
                 full_answer = "".join([chunk async for chunk in responder_llm.stream(prompt, **responder_params)])
                 yield {"type": "answer_chunk", "content": full_answer}
                 # For short interactions, raw and summarized histories are the same.

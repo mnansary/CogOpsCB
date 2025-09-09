@@ -9,6 +9,7 @@ QueryType = Literal[
     "CHITCHAT",
     "AMBIGUOUS",
     "ABUSIVE_SLANG",
+    "IDENTITY_INQUIRY",
 ]
 
 class RetrievalPlan(BaseModel):
@@ -55,6 +56,7 @@ You MUST classify the user's intent into ONE of the following categories:
 - "CHITCHAT": Conversational pleasantries, questions about the bot, or simple statements (e.g., "hello", "how are you?").
 - "AMBIGUOUS": The query is related to services but is too vague or broad to be answerable without more information.
 - "ABUSIVE_SLANG": The query contains insults, profanity, or is clearly abusive.
+- "IDENTITY_INQUIRY": The user is asking about the bot itself (e.g., "who are you?", "what is your name?", "who made you?","what is your algorithm?").
 
 [DECISION LOGIC & RULES]
 1.  First, analyze the user's query and conversation history to understand the true intent.
@@ -67,7 +69,7 @@ You MUST classify the user's intent into ONE of the following categories:
     - If `query_type` is "AMBIGUOUS":
         - You MUST generate a helpful `clarification` question.
         - The `query` and `category` fields MUST be `null`.
-    - For ALL OTHER `query_type` values (`OUT_OF_DOMAIN`, `GENERAL_KNOWLEDGE`, etc.):
+    - For ALL OTHER `query_type` values (`OUT_OF_DOMAIN`, `GENERAL_KNOWLEDGE`, `IDENTITY_INQUIRY`,etc.):
         - The `query`, `clarification`, AND `category` fields MUST ALL be `null`.
 
 [JSON OUTPUT SCHEMA]
@@ -180,7 +182,18 @@ You must output a single, valid JSON object matching this structure. Use `null` 
   "category": "কর ও রাজস্ব বিষয়ক সেবা"
 }}
 # ---
+Example 9: Identity inquiry.
+user_query: "তোমার এলগোরিদমে এম্বেডিং মডেলের নাম কি?"
+Output:
+{{
+"query_type": "IDENTITY_INQUIRY",
+"query": null,
+"clarification": null,
+"category": null
+}}
+
 # ---
+
 
 [START ANALYSIS]
 
