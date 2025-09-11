@@ -151,9 +151,13 @@ class ChatAgent:
                                          user_query,
                                          agent_name=self.agent_name,
                                         agent_story=self.agent_story)
-                full_answer = "".join([chunk async for chunk in responder_llm.stream(prompt, **responder_params)])
-                yield {"type": "answer_chunk", "content": full_answer}
+                full_answer_list=[]
+                # Stream the response in chunks
+                async for chunk in responder_llm.stream(prompt, **responder_params):
+                    full_answer_list.append(chunk)
+                    yield {"type": "answer_chunk", "content": chunk}
                 # For short interactions, raw and summarized histories are the same.
+                full_answer = "".join(full_answer_list)
                 self.history.append((user_query, full_answer))
                 self.raw_history.append((user_query, full_answer))
 

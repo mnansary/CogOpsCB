@@ -28,7 +28,7 @@ task_to_model_mapping:
 
 # --- Conversation Management ---
 conversation:
-  history_window: 3
+  history_window: 10  # Number of past exchanges to retain in history.
 
 # --- Vector Retriever Configuration ---
 vector_retriever:
