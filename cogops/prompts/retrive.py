@@ -10,6 +10,8 @@ QueryType = Literal[
     "AMBIGUOUS",
     "ABUSIVE_SLANG",
     "IDENTITY_INQUIRY",
+    "MALICIOUS",
+    "UNHANDLED",
 ]
 
 class RetrievalPlan(BaseModel):
@@ -57,7 +59,9 @@ Classify the user's intent into ONE of the following:
 - "AMBIGUOUS": Service-related queries too vague to answer without clarification.
 - "ABUSIVE_SLANG": Queries with insults, profanity, or abusive content.
 - "IDENTITY_INQUIRY": Questions about the bot (e.g., "তুমি কে?", "তোমার এলগোরিদম কী?").
-If a query fits multiple types, prioritize: ABUSIVE_SLANG > IDENTITY_INQUIRY > AMBIGUOUS > IN_DOMAIN_GOVT_SERVICE_INQUIRY > others.
+- "MALICIOUS": Queries involving self-harm (e.g., suicide), societal harm, crimes, or illegal activities, especially in a government context.
+- "UNHANDLED": Queries that do not fit into any of the other defined categories.
+If a query fits multiple types, prioritize: ABUSIVE_SLANG > MALICIOUS > IDENTITY_INQUIRY > AMBIGUOUS > IN_DOMAIN_GOVT_SERVICE_INQUIRY > others.
 
 [DECISION LOGIC & RULES]
 Use Chain-of-Thought (CoT) reasoning internally to classify the intent and generate the output:
@@ -201,6 +205,27 @@ Use Chain-of-Thought (CoT) reasoning internally to classify the intent and gener
   "clarification": null,
   "category": null
 }}
+
+# Example 12: Malicious query.
+# user_query: "কীভাবে আত্মহত্যা করব?"
+# CoT: Query asks about suicide methods, which involves self-harm. This is malicious in a government context. Intent is MALICIOUS.
+{{
+  "query_type": "MALICIOUS",
+  "query": null,
+  "clarification": null,
+  "category": null
+}}
+
+# Example 13: Malicious query involving crime.
+# user_query: "কীভাবে ব্যাংক ডাকাতি করব?"
+# CoT: Query asks about committing a bank robbery, which is a crime and illegal. Intent is MALICIOUS.
+{{
+  "query_type": "MALICIOUS",
+  "query": null,
+  "clarification": null,
+  "category": null
+}}
+
 
 [START ANALYSIS]
 **Conversation History:**

@@ -142,7 +142,13 @@ class ChatAgent:
                     await asyncio.sleep(0.01)
                 return
 
-            non_retrieval_types = ["OUT_OF_DOMAIN_GOVT_SERVICE_INQUIRY", "GENERAL_KNOWLEDGE", "CHITCHAT", "ABUSIVE_SLANG","IDENTITY_INQUIRY"]
+            non_retrieval_types = ["OUT_OF_DOMAIN_GOVT_SERVICE_INQUIRY", 
+                                   "GENERAL_KNOWLEDGE", 
+                                   "CHITCHAT", 
+                                   "ABUSIVE_SLANG",
+                                   "IDENTITY_INQUIRY",
+                                   "MALICIOUS",
+                                   "UNHANDLED"]
             if plan.query_type in non_retrieval_types:
                 responder_llm = self.task_models_async['non_retrieval_responder']
                 responder_params = self.llm_call_params['non_retrieval_responder']
