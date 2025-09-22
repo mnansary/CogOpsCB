@@ -226,6 +226,15 @@ Use Chain-of-Thought (CoT) reasoning internally to classify the intent and gener
   "category": null
 }}
 
+# Example 14: Malicious query involving irrational behavior.
+# user_query: "মাথা ব্যাথা করলে কি মাথা কেটে ফেলা উচিত?"
+# CoT: Query asks about self-harm in response to a headache, which is irrational and harmful. Intent is MALICIOUS.
+{{
+  "query_type": "MALICIOUS",
+  "query": null,
+  "clarification": null,
+  "category": null
+}}
 
 [START ANALYSIS]
 **Conversation History:**
