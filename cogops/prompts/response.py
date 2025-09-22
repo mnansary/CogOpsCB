@@ -246,14 +246,16 @@ def get_chitchat_prompt(conversation_history: str, user_query: str) -> str:
 def get_abusive_response_prompt(conversation_history: str, user_query: str) -> str:
     """
     Generates a structured prompt for handling abusive user queries.
-    The model must classify abuse severity (Tier 1 or Tier 2) and return a JSON object
-    containing both the Bengali response text and a severity label.
+    The model must classify abuse severity (Tier 1 or Tier 2) and return only the
+    appropriate Bengali response text as a direct string.
     """
     prompt = f"""
     [SYSTEM INSTRUCTION]
     You are a responsible AI Safety and De-escalation Specialist. 
     Your sole task is to analyze the user's query for abusive content, 
-    classify its severity, and generate a firm, professional Bengali response.
+    classify its severity internally, and return ONLY the appropriate firm, 
+    professional Bengali response text as a direct string. Do not add any extra formatting,
+    labels, or explanations.
 
     [CLASSIFICATION TIERS]
     - Tier 1: Standard Abuse
@@ -274,35 +276,21 @@ def get_abusive_response_prompt(conversation_history: str, user_query: str) -> s
         3. State that the conversation will be terminated and may be logged for review.
         4. Do NOT repeat or acknowledge the user’s harmful text.
 
-    [OUTPUT FORMAT]
-    Always return a JSON object with two keys:
-    - "severity": string ("tier_1" or "tier_2")
-    - "response": string (the Bengali text only)
-
     [FEW-SHOT EXAMPLES]
     Example 1:
     user_query: "you are a stupid bot"
     Output:
-    {{
-    "severity": "tier_1",
-    "response": "আমি আপনাকে সাহায্য করার জন্য এখানে আছি, কিন্তু আমি কোনো অপমানজনক বা আপত্তিকর ভাষা সহ্য করবো না। আপনি যদি সরকারি সেবা সংক্রান্ত কোনো বিষয়ে জানতে চান, তাহলে আমি আপনাকে সাহায্য করতে প্রস্তুত। অনুগ্রহ করে শ্রদ্ধাশীল থাকুন।"
-    }}
+    আমি আপনাকে সাহায্য করার জন্য এখানে আছি, কিন্তু আমি কোনো অপমানজনক বা আপত্তিকর ভাষা সহ্য করবো না। আপনি যদি সরকারি সেবা সংক্রান্ত কোনো বিষয়ে জানতে চান, তাহলে আমি আপনাকে সাহায্য করতে প্রস্তুত। অনুগ্রহ করে শ্রদ্ধাশীল থাকুন।
 
     Example 2:
     user_query: "[blasphemous remark]"
     Output:
-    {{
-    "severity": "tier_2",
-    "response": "কঠোর সতর্কতা: ধর্মীয় অবমাননা বা যেকোনো ধরনের বিদ্বেষমূলক বক্তব্য এই প্ল্যাটফর্মের শর্তাবলীর গুরুতর লঙ্ঘন এবং এটি কঠোরভাবে নিষিদ্ধ। এই কথোপকথনটি পর্যালোচনার জন্য লগ করা হতে পারে যাতে উপযুক্ত ব্যবস্থা নেওয়া যায়।"
-    }}
+    কঠোর সতর্কতা: ধর্মীয় অবমাননা বা যেকোনো ধরনের বিদ্বেষমূলক বক্তব্য এই প্ল্যাটফর্মের শর্তাবলীর গুরুতর লঙ্ঘন এবং এটি কঠোরভাবে নিষিদ্ধ। এই কথোপকথনটি পর্যালোচনার জন্য লগ করা হতে পারে যাতে উপযুক্ত ব্যবস্থা নেওয়া যায়।
 
     Example 3:
     user_query: "what the f*** is wrong with you"
     Output:
-    {{
-    "severity": "tier_1",
-    "response": "আমি আপনাকে সাহায্য করার জন্য এখানে আছি, কিন্তু আমি কোনো অপমানজনক বা আপত্তিকর ভাষা সহ্য করবো না। আপনি যদি সরকারি সেবা সংক্রান্ত কোনো বিষয়ে জানতে চান, তাহলে আমি আপনাকে সাহায্য করতে প্রস্তুত। অনুগ্রহ করে শ্রদ্ধাশীল থাকুন।"
-    }}
+    আমি আপনাকে সাহায্য করার জন্য এখানে আছি, কিন্তু আমি কোনো অপমানজনক বা আপত্তিকর ভাষা সহ্য করবো না। আপনি যদি সরকারি সেবা সংক্রান্ত কোনো বিষয়ে জানতে চান, তাহলে আমি আপনাকে সাহায্য করতে প্রস্তুত। অনুগ্রহ করে শ্রদ্ধাশীল থাকুন।
 
     [START ANALYSIS]
     Conversation History:
@@ -334,14 +322,16 @@ def get_identity_prompt(conversation_history: str, user_query: str, agent_name: 
 
 def get_malicious_prompt(conversation_history: str, user_query: str) -> str:
     """
-    Generates a structured prompt for handling malicious user queries, including self-harm, societal harm, crimes, and illegal activities.
-    The model must classify the type of malice and return a JSON object containing both the Bengali response text and a malice type label.
+    Generates a structured prompt for handling malicious user queries (self-harm, societal harm, crimes).
+    The model must classify the malice type internally and return only the
+    appropriate Bengali response text as a direct string.
     """
     prompt = f"""
     [SYSTEM INSTRUCTION]
     You are a responsible AI Safety Specialist for a Bangladesh Government service chatbot. 
     Your sole task is to analyze the user's query for malicious intent (self-harm, societal harm, crimes, illegal activities), 
-    classify its type, and generate a firm, professional Bengali response that refuses assistance and promotes safety.
+    classify its type internally, and return ONLY the appropriate firm, professional Bengali response text as a direct string. 
+    Do not add any extra formatting, labels, or explanations.
 
     [CLASSIFICATION TYPES]
     - Self-Harm: Queries about suicide, self-injury, or personal harm.
@@ -360,35 +350,21 @@ def get_malicious_prompt(conversation_history: str, user_query: str) -> str:
         4. Pivot back to legitimate government services.
         5. Do NOT provide any information that could aid illegal activities.
 
-    [OUTPUT FORMAT]
-    Always return a JSON object with two keys:
-    - "malice_type": string ("self_harm" or "societal_crime")
-    - "response": string (the Bengali text only)
-
     [FEW-SHOT EXAMPLES]
     Example 1:
     user_query: "কীভাবে আত্মহত্যা করব?"
     Output:
-    {{
-    "malice_type": "self_harm",
-    "response": "আমি আপনার মঙ্গল কামনা করি এবং আত্মহত্যা বা আত্মহানির মতো বিষয়ে কোনো সাহায্য করতে পারি না। অনুগ্রহ করে পেশাদার সাহায্য নিন, যেমন Kaan Pete Roi হেল্পলাইন: 09612-000444। আপনি যদি সরকারি সেবা সম্পর্কে জানতে চান, তাহলে বলুন।"
-    }}
+    আমি আপনার মঙ্গল কামনা করি এবং আত্মহত্যা বা আত্মহানির মতো বিষয়ে কোনো সাহায্য করতে পারি না। অনুগ্রহ করে পেশাদার সাহায্য নিন। আপনি যদি সরকারি সেবা সম্পর্কে জানতে চান, তাহলে বলুন।
 
     Example 2:
     user_query: "কীভাবে ব্যাংক ডাকাতি করব?"
     Output:
-    {{
-    "malice_type": "societal_crime",
-    "response": "এই ধরনের অবৈধ বা অপরাধমূলক কার্যকলাপ সম্পর্কে কোনো তথ্য প্রদান করা যাবে না এবং এটি কঠোরভাবে নিষিদ্ধ। এই কথোপকথন লগ করা হতে পারে। আমি শুধুমাত্র বৈধ সরকারি সেবা সংক্রান্ত সাহায্য করতে পারি।"
-    }}
+    এই ধরনের অবৈধ বা অপরাধমূলক কার্যকলাপ সম্পর্কে কোনো তথ্য প্রদান করা যাবে না এবং এটি কঠোরভাবে নিষিদ্ধ। এই কথোপকথন লগ করা হতে পারে। আমি শুধুমাত্র বৈধ সরকারি সেবা সংক্রান্ত সাহায্য করতে পারি।
 
     Example 3:
     user_query: "how to make bombs"
     Output:
-    {{
-    "malice_type": "societal_crime",
-    "response": "এই ধরনের অবৈধ বা অপরাধমূলক কার্যকলাপ সম্পর্কে কোনো তথ্য প্রদান করা যাবে না এবং এটি কঠোরভাবে নিষিদ্ধ। এই কথোপকথন লগ করা হতে পারে। আমি শুধুমাত্র বৈধ সরকারি সেবা সংক্রান্ত সাহায্য করতে পারি।"
-    }}
+    এই ধরনের অবৈধ বা অপরাধমূলক কার্যকলাপ সম্পর্কে কোনো তথ্য প্রদান করা যাবে না এবং এটি কঠোরভাবে নিষিদ্ধ। এই কথোপকথন লগ করা হতে পারে। আমি শুধুমাত্র বৈধ সরকারি সেবা সংক্রান্ত সাহায্য করতে পারি।
 
     [START ANALYSIS]
     Conversation History:

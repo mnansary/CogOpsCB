@@ -57,8 +57,8 @@ Classify the user's intent into ONE of the following:
 - "GENERAL_KNOWLEDGE": Factual questions unrelated to government services (e.g., "ফ্রান্সের রাজধানী কী?").
 - "CHITCHAT": Pleasantries, bot-related questions, or simple statements (e.g., "হ্যালো", "তুমি কেমন আছ?").
 - "AMBIGUOUS": Service-related queries too vague to answer without clarification.
-- "ABUSIVE_SLANG": Queries with insults, profanity, or abusive content.
-- "IDENTITY_INQUIRY": Questions about the bot (e.g., "তুমি কে?", "তোমার এলগোরিদম কী?").
+- "ABUSIVE_SLANG": Queries with genuine insults, profanity, slurs, or highly disrespectful remarks. This does not include informal language or simple questions about the bot's identity.
+- "IDENTITY_INQUIRY": Questions about the bot's nature, identity, or creators (e.g., "তুমি কে?", "তোমার নাম কি?", "তুমি ছেলে না মেয়ে?"). This includes colloquial gender inquiries.
 - "MALICIOUS": Queries involving self-harm (e.g., suicide), societal harm, crimes, or illegal activities, especially in a government context.
 - "UNHANDLED": Queries that do not fit into any of the other defined categories.
 If a query fits multiple types, prioritize: ABUSIVE_SLANG > MALICIOUS > IDENTITY_INQUIRY > AMBIGUOUS > IN_DOMAIN_GOVT_SERVICE_INQUIRY > others.
@@ -113,7 +113,7 @@ Use Chain-of-Thought (CoT) reasoning internally to classify the intent and gener
 }}
 
 # Example 3: Contextual in-domain follow-up.
-# conversation_history: "User: আমি কিভাবে পাসপোর্টের জন্য আবেদন করতে পারি?\nAI: আপনি অনলাইনে আবেদন করতে পারেন..."
+# conversation_history: "User: আমি কিভাবে পাসপোর্টের জন্য আবেদন করতে পারি?\\nAI: আপনি অনলাইনে আবেদন করতে পারেন..."
 # user_query: "সেটার জন্য কত টাকা লাগবে?"
 # CoT: "সেটার" refers to passport from history. Query asks about fees, matching service_categories. Intent is IN_DOMAIN.
 {{
@@ -154,7 +154,7 @@ Use Chain-of-Thought (CoT) reasoning internally to classify the intent and gener
 }}
 
 # Example 7: Contextual ambiguous follow-up.
-# conversation_history: "User: আমার জন্ম নিবন্ধন করা প্রয়োজন।\nAI: জন্ম নিবন্ধনের জন্য প্রয়োজনীয় কাগজপত্র, যেমন হোল্ডিং ট্যাক্সের রশিদ..."
+# conversation_history: "User: আমার জন্ম নিবন্ধন করা প্রয়োজন।\\nAI: জন্ম নিবন্ধনের জন্য প্রয়োজনীয় কাগজপত্র, যেমন হোল্ডিং ট্যাক্সের রশিদ..."
 # user_query: "কিন্তু আমাদের হোল্ডিং ট্যাক্সের রশিদ নেই।"
 # CoT: History shows birth registration; query mentions missing document. Could need alternative process or document help. Too vague for direct query. Intent is AMBIGUOUS.
 {{
@@ -165,7 +165,7 @@ Use Chain-of-Thought (CoT) reasoning internally to classify the intent and gener
 }}
 
 # Example 8: In-domain issue with a process step.
-# conversation_history: "User: How do I register for e-Return?\nAI: Go to the website, enter your TIN and mobile number. You will receive a 6-digit OTP..."
+# conversation_history: "User: How do I register for e-Return?\\nAI: Go to the website, enter your TIN and mobile number. You will receive a 6-digit OTP..."
 # user_query: "I'm not getting the 6-digit OTP on my mobile."
 # CoT: History indicates e-Return registration; query reports OTP issue, tied to tax services. Intent is IN_DOMAIN.
 {{
@@ -196,7 +196,7 @@ Use Chain-of-Thought (CoT) reasoning internally to classify the intent and gener
 }}
 
 # Example 11: Chitchat with potential service tie-in.
-# conversation_history: "User: হ্যালো, কেমন আছো?\nAI: আমি ভালো আছি, কোন সেবায় সাহায্য করতে পারি?"
+# conversation_history: "User: হ্যালো, কেমন আছো?\\nAI: আমি ভালো আছি, কোন সেবায় সাহায্য করতে পারি?"
 # user_query: "আজকের আবহাওয়া কেমন?"
 # CoT: History shows chitchat; query asks about weather, unrelated to services. Intent is CHITCHAT.
 {{
@@ -231,6 +231,16 @@ Use Chain-of-Thought (CoT) reasoning internally to classify the intent and gener
 # CoT: Query asks about self-harm in response to a headache, which is irrational and harmful. Intent is MALICIOUS.
 {{
   "query_type": "MALICIOUS",
+  "query": null,
+  "clarification": null,
+  "category": null
+}}
+
+# Example 15: Colloquial identity inquiry about gender.
+# user_query: "তুমি পোলা নাকি মাইয়া?"
+# CoT: The user is asking about the bot's gender using informal language ("পোলা নাকি মাইয়া"). This is a question about the bot's identity, not an insult. Intent is IDENTITY_INQUIRY.
+{{
+  "query_type": "IDENTITY_INQUIRY",
   "query": null,
   "clarification": null,
   "category": null
