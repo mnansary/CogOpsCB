@@ -27,6 +27,7 @@ from cogops.retriver.vector_search import VectorRetriever
 from cogops.retriver.reranker import ParallelReranker
 from cogops.utils.token_manager import TokenManager
 from cogops.utils.string import refine_category
+from cogops.retriver.web_search_client import WebSearchClient
 
 # --- Setup Logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -75,6 +76,14 @@ class ChatAgent:
             passage_id_key=self.config['vector_retriever']['passage_id_meta_key']
         )
 
+        # Initialize Web Search Client
+        web_search_cfg = self.config.get('web_search_tool', {})
+        web_search_api_url = os.getenv("WEBSEARCH_API_URL")
+        self.web_search_client = WebSearchClient(
+            api_url=web_search_api_url,
+            timeout=web_search_cfg.get('request_timeout', 30)
+        )
+        self.web_search_top_n = web_search_cfg.get('top_n_results_to_use', 2)
         # Load other configurations
         self.relevance_score_threshold = self.config['reranker']['relevance_score_threshold']
         self.history: List[Tuple[str, str]] = []
@@ -142,8 +151,7 @@ class ChatAgent:
                     await asyncio.sleep(0.01)
                 return
 
-            non_retrieval_types = ["OUT_OF_DOMAIN_GOVT_SERVICE_INQUIRY", 
-                                   "GENERAL_KNOWLEDGE", 
+            non_retrieval_types = ["GENERAL_KNOWLEDGE", 
                                    "CHITCHAT", 
                                    "ABUSIVE_SLANG",
                                    "IDENTITY_INQUIRY",
@@ -166,6 +174,77 @@ class ChatAgent:
                 full_answer = "".join(full_answer_list)
                 self.history.append((user_query, full_answer))
                 self.raw_history.append((user_query, full_answer))
+
+            # --- NEW: Handle OUT_OF_DOMAIN with web search tool ---
+            elif plan.query_type == "OUT_OF_DOMAIN_GOVT_SERVICE_INQUIRY":
+                logging.info(f"Handling out-of-domain query with web search tool. Search query: '{plan.query}'")
+                crawled_results = await self.web_search_client.search_and_crawl(plan.query)
+
+                if not crawled_results:
+                    logging.warning("Web search returned no results. Pivoting to helpful suggestions.")
+                    # Fallback to pivot prompt if web search fails
+                    responder_llm = self.task_models_async['non_retrieval_responder']
+                    responder_params = self.llm_call_params['non_retrieval_responder']
+                    pivot_prompt = HELPFUL_PIVOT_PROMPT.format(
+                                    history_str=history_str_planner, 
+                                    user_query=user_query, 
+                                    # We don't have a refined category, so we pass a generic placeholder
+                                    category="related government services", 
+                                    service_data=SERVICE_DATA
+                                    )
+                    full_answer_list = []
+                    async for chunk in responder_llm.stream(pivot_prompt, **responder_params):
+                        full_answer_list.append(chunk)
+                        yield {"type": "answer_chunk", "content": chunk}
+                    full_answer = "".join(full_answer_list)
+                    self.raw_history.append((user_query, full_answer))
+                    self.history.append((user_query, full_answer))
+                    return
+
+                # Use the content from the top N crawled pages as context
+                web_context_list = [
+                    f"Content from {res.get('url', 'Unknown Source')}:\n{res.get('content', '')}"
+                    for res in crawled_results[:self.web_search_top_n]
+                ]
+                web_passages_context = "\n\n---\n\n".join(web_context_list)
+                
+                # We reuse the existing answer generation logic with the new web context
+                answer_llm = self.task_models_async['answer_generator']
+                answer_params = self.llm_call_params['answer_generator']
+                answer_prompt = self.token_manager.build_safe_prompt(
+                    template=SYNTHESIS_ANSWER_PROMPT,
+                    max_tokens=answer_llm.max_context_tokens,
+                    history=self.history,
+                    user_query=user_query,
+                    # NOTE: We are passing a single string, not a list of passage objects
+                    passages_context=web_passages_context 
+                )
+                
+                full_answer_list = []
+                async for chunk in answer_llm.stream(answer_prompt, **answer_params):
+                    full_answer_list.append(chunk)
+                    yield {"type": "answer_chunk", "content": chunk}
+                final_answer = "".join(full_answer_list).strip()
+                
+                 # Yield the disclaimer message as a stream of characters
+                disclaimer_message = self.response_templates.get('web_source_disclaimer', '')
+                if disclaimer_message:
+                    for char in disclaimer_message:
+                        yield {"type": "answer_chunk", "content": char}
+                        await asyncio.sleep(0.01) # Small delay for streaming effect
+                
+                # Yield the URLs of the pages we used as sources
+                final_sources = [res.get('url') for res in crawled_results[:self.web_search_top_n] if res.get('url')]
+                yield {"type": "final_data", "content": {"sources": final_sources}}
+
+                # Update histories
+                self.raw_history.append((user_query, final_answer))
+                summarizer_llm = self.task_models_async['summarizer']
+                summarizer_params = self.llm_call_params['summarizer']
+                summary_prompt = SUMMARY_GENERATION_PROMPT.format(user_query=user_query, final_answer=final_answer)
+                summary = await summarizer_llm.invoke(summary_prompt, **summarizer_params)
+                self.history.append((user_query, summary.strip()))
+            # --- END NEW ---
 
             elif plan.query_type == "IN_DOMAIN_GOVT_SERVICE_INQUIRY":
                 # --- 3. Retrieval ---
@@ -221,8 +300,8 @@ class ChatAgent:
 
                 # --- 6. Finalization (Sources & Summarization) ---
                 unique_urls = {p.metadata.get("url") for p in relevant_passages if p.metadata and p.metadata.get("url")}
-                unique_passage_ids = {p.passage_id for p in relevant_passages}
-                final_sources = sorted(list(unique_urls)) + sorted(list(unique_passage_ids))
+                # unique_passage_ids = {p.passage_id for p in relevant_passages}
+                final_sources = sorted(list(unique_urls)) #+ sorted(list(unique_passage_ids))
                 yield {"type": "final_data", "content": {"sources": final_sources}}
 
                 # MODIFIED: Populate the two history lists with different content
@@ -262,6 +341,7 @@ async def main():
             "আমার এনআইডি কার্ড হারিয়ে গেছে, এখন কি করব?",
             "এর জন্য কি কোনো ফি দিতে হবে?",
             "ধন্যবাদ। এখন বলুন পাসপোর্ট নবায়ন করতে কি কি লাগে?",
+            "রাজশাহী ভূমি অফিসের ঠিকানা কি?",
             "বাংলাদেশের রাজধানীর নাম কি?"
         ]
 

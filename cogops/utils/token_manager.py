@@ -2,7 +2,7 @@
 
 import logging
 from transformers import AutoTokenizer
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Union
 from pydantic import BaseModel
 
 class TokenManager:
@@ -14,11 +14,11 @@ class TokenManager:
         """
         Initializes the tokenizer and configuration for prompt building.
         """
-        print(f"Initializing TokenManager with tokenizer from '{model_name}'...")
+        logging.info(f"Initializing TokenManager with tokenizer from '{model_name}'...")
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.reservation_tokens = reservation_tokens
         self.history_budget = history_budget
-        print(f"✅ TokenManager initialized. Reservation: {reservation_tokens} tokens, History Budget: {history_budget*100}%.")
+        logging.info(f"✅ TokenManager initialized. Reservation: {reservation_tokens} tokens, History Budget: {history_budget*100}%.")
 
     def count_tokens(self, text: str) -> int:
         """Counts the number of tokens in a given string."""
@@ -43,39 +43,48 @@ class TokenManager:
         
         return "History is too long to be included."
 
-    def _truncate_passages(self, passages: List[Any], max_tokens: int) -> str:
+    def _truncate_passages(self, passages: Union[List[Any], str], max_tokens: int) -> str:
         """
-        Truncates a list of passages from last to first to fit the token budget.
-        Returns a formatted string of the truncated passages.
-        This function can now handle both lists of dicts and lists of Pydantic objects.
+        Truncates passages to fit the token budget. Handles both a list of passage
+        objects/dicts and a single pre-formatted string of context.
         """
         if not passages:
             return ""
 
-        for i in range(len(passages), 0, -1):
-            current_passages = passages[:i]
-            
-            # --- MODIFIED: Handle both dicts and Pydantic objects ---
-            formatted_passages = []
-            for p in current_passages:
-                # Check if the item is a Pydantic model instance
-                if isinstance(p, BaseModel):
-                    passage_id = p.passage_id
-                    document = p.document
-                # Otherwise, treat it as a dictionary
-                else:
-                    passage_id = p.get('metadata', {}).get('passage_id', p.get('id', 'N/A'))
-                    document = p.get('document', '')
+        # --- NEW: Handle the case where a single string (from web search) is passed ---
+        if isinstance(passages, str):
+            if self.count_tokens(passages) <= max_tokens:
+                return passages
+            else:
+                # If the string is too long, truncate it by tokens
+                encoded_prompt = self.tokenizer.encode(passages)
+                truncated_encoded = encoded_prompt[:max_tokens]
+                logging.warning(f"Web passages context was too long and has been truncated to {max_tokens} tokens.")
+                return self.tokenizer.decode(truncated_encoded, skip_special_tokens=True)
+        # --- END NEW ---
+
+        # Original logic for handling a list of passages
+        if isinstance(passages, list):
+            for i in range(len(passages), 0, -1):
+                current_passages = passages[:i]
                 
-                formatted_passages.append(f"Passage ID: {passage_id}\nContent: {document}")
+                formatted_passages = []
+                for p in current_passages:
+                    if isinstance(p, BaseModel):
+                        passage_id = p.passage_id
+                        document = p.document
+                    else:
+                        passage_id = p.get('metadata', {}).get('passage_id', p.get('id', 'N/A'))
+                        document = p.get('document', '')
+                    
+                    formatted_passages.append(f"Passage ID: {passage_id}\nContent: {document}")
 
-            context = "\n\n".join(formatted_passages)
-            # --- END MODIFICATION ---
+                context = "\n\n".join(formatted_passages)
 
-            if self.count_tokens(context) <= max_tokens:
-                return context
+                if self.count_tokens(context) <= max_tokens:
+                    return context
         
-        return ""
+        return "" # Fallback for empty or unhandled types
 
     def build_safe_prompt(self, template: str, max_tokens: int, **kwargs: Dict[str, Any]) -> str:
         """
@@ -113,7 +122,6 @@ class TokenManager:
         if 'history' in kwargs:
             final_components['history_str'] = history_str
         if 'passages_context' in kwargs:
-            # The prompt template should expect this key
             final_components['passages_context'] = passage_str
 
         final_prompt = template.format(**final_components)

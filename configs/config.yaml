@@ -94,6 +94,12 @@ llm_call_parameters:
     temperature: 0.2
     max_tokens: 1024
 
+web_search_tool:
+  # Timeout in seconds for the entire search-and-crawl operation.
+  request_timeout: 10
+  # The number of top crawled web pages to use as context for the answer.
+  top_n_results_to_use: 4
+
 # --- Response Templates ---
 # Canned responses for specific scenarios.
 response_templates:
@@ -101,3 +107,4 @@ response_templates:
   plan_generation_failed: "I'm having trouble understanding your request at the moment. Could you please rephrase it?"
   no_passages_found: " দুঃখিত, আমি এই মুহূর্তে আপনার অনুরোধ সম্পর্কিত কোনো তথ্য খুঁজে পাচ্ছি না।"
   no_relevant_passages_after_rerank: "আমি আপনার বিষয়টি সম্পর্কিত কিছু তথ্য পেয়েছি, কিন্তু সুস্পষ্ট উত্তর খুঁজে পাইনি। আপনি কি আপনার প্রশ্নটি আরেকটু বিস্তারিতভাবে বলতে পারেন?"
+  web_source_disclaimer: "\n\nবিশেষ দ্রষ্টব্য: এই তথ্যটি সরকারি ওয়েবসাইট থেকে সংগ্রহ করা হয়েছে এবং এটি এখনও আমাদের যাচাইকৃত ডেটাবেজে অন্তর্ভুক্ত নয়।"
