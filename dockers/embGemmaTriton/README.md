@@ -269,7 +269,7 @@ Create a conda environment and install dependencies:
 ```bash
 conda create -n gemmatriton python=3.11
 conda activate gemmatriton
-pip install tritonclient[http] onnxruntime-gpu transformers torch numpy
+pip install tritonclient[http] onnxruntime-gpu transformers torch numpy nvidia-ml-py
 python verify_model.py
 ```
 

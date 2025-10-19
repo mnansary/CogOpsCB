@@ -34,9 +34,6 @@ Create a new file named `docker-compose.yml` inside the `database/chromadb` dire
 ```yaml
 # /database/chromadb/docker-compose.yml
 # A ROBUST AND CONFLICT-FREE CHROMA DEPLOYMENT
-
-version: "3.9"
-
 services:
   chroma:
     image: "chromadb/chroma:0.5.3"
@@ -47,7 +44,7 @@ services:
     # Binds the container's internal port 8000 to port 8000 on your local machine.
     # The '127.0.0.1' ensures it is only accessible from your computer, not the wider network.
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8443:8000"
 
     # --- Data Persistence ---
     # Maps a folder named 'chroma_data' in your current directory to the data directory inside the container.
@@ -61,7 +58,7 @@ services:
 
     healthcheck:
       # This check runs inside the container and confirms the service is responsive.
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      test: ["CMD", "curl", "-f", "http://localhost:8443/api/v1/heartbeat"]
       interval: 15s
       timeout: 5s
       retries: 5
