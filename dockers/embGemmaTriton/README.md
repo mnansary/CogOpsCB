@@ -267,7 +267,7 @@ curl -v localhost:8001/v2/health/ready
 Create a conda environment and install dependencies:
 
 ```bash
-conda create -n gemmatriton python=3.10
+conda create -n gemmatriton python=3.11
 conda activate gemmatriton
 pip install tritonclient[http] onnxruntime-gpu transformers torch numpy
 python verify_model.py

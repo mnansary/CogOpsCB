@@ -21,7 +21,7 @@ services:
       --enable-auto-tool-choice
       --tool-call-parser qwen3_coder
       --trust-remote-code
-      --api-key rYGBOPZ8meDvpJQRj4aF9hJJlatgApirBCCEBLICTL40sGemma327Bit
+      --api-key ${VLLM_API_KEY}
 
     # --- GPU Access ---
     # This is the equivalent of '--gpus all'

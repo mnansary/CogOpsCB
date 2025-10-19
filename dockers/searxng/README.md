@@ -1,7 +1,3 @@
-Of course. Here is a comprehensive, step-by-step README file that covers everything from the initial setup and solving the server storage issue, to deployment, and finally testing with both `curl` and a practical Python example.
-
----
-
 # Private SearXNG API for SearchRAG
 
 This project provides a secure, fast, and private search API using SearXNG, specifically configured to act as a backend for a Retrieval-Augmented Generation (RAG) pipeline.

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 # --- Static Configuration ---
 VLLM_BASE_URL = "http://127.0.0.1:5000/v1"
-VLLM_API_KEY = "rYGBOPZ8meDvpJQRj4aF9hJJlatgApirBCCEBLICTL40sGemma327Bit"
+VLLM_API_KEY = "YOUR_VLLM_API"
 VLLM_MODEL_NAME = "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8"
 MAX_CONTEXT_TOKENS = 32768
 
