@@ -63,8 +63,6 @@ This is the main instruction file that tells Docker how to set up and run your P
     # ~/database/postgresql-local/docker-compose.yml
     # A robust, root-free PostgreSQL setup with a custom network to prevent conflicts.
 
-    version: '3.8'
-
     services:
       postgres:
         image: postgres:16
@@ -151,7 +149,7 @@ The final step is to run a Python script to confirm that your database is workin
 
 1.  **Install the required Python library:**
     ```bash
-    pip install psycopg2-binary
+    pip install psycopg2-binary sqlalchemy loguru 
     ```
 
 2.  **Create a new file named `test_connection.py`**.
@@ -208,3 +206,62 @@ The final step is to run a Python script to confirm that your database is workin
     ```
 
 If everything is set up correctly, you will see a **"Connection Successful!"** message. Your local, persistent, and conflict-free PostgreSQL database is now ready to use.
+
+
+
+---
+
+### 1. Instructions: Setting Up the Database and Table
+
+Follow these steps in your terminal to prepare your PostgreSQL database.
+
+**Step 1: Connect to PostgreSQL**
+
+Use the `psql` command-line tool to connect to your PostgreSQL server as the `postgres` user.
+
+```bash
+# Get inside your running postgres docker container
+docker exec -it postgres_local_dev bash
+
+# Connect to psql
+psql -h localhost -U postgres
+```
+
+**Step 2: Create the Database (If not already done)**
+
+You have already done this, but for completeness, here is the command.
+
+```sql
+CREATE DATABASE passages_db;
+```
+
+**Step 3: Connect to Your New Database**
+
+Switch your connection from the default `postgres` database to your new `passages_db`.
+
+```sql
+\c passages_db
+```
+
+**Step 4: Create the `passages` Table**
+
+This is a crucial step. Since your `SQLDatabaseManager` connects to an *existing* table, you must create it first. Run the following SQL command to define the table schema.
+
+```sql
+CREATE TABLE passages (
+    passage_id INTEGER NOT NULL,
+    category VARCHAR,
+    sub_category VARCHAR,
+    service VARCHAR,
+    topic VARCHAR,
+    text TEXT NOT NULL,
+    url VARCHAR,
+    date DATE,
+    PRIMARY KEY (passage_id)
+);
+```
+
+You can verify that the table was created with the `\dt` command. You are now ready to run the Python scripts.
+
+**Step-5: Check DB ops**
+execute: ```python test_database_ops.py```

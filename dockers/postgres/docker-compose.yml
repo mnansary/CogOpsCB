@@ -1,8 +1,6 @@
 # ~/database/postgresql-local/docker-compose.yml
 # A robust, root-free PostgreSQL setup with a custom network to prevent conflicts.
 
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16
