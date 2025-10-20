@@ -4,67 +4,27 @@
 agent_name: "আশা"
 agent_story: "আমি বাংলাদেশ সরকারের নাগরিকদের সহায়তা করার জন্য ডিজাইন করা একটি ডিজিটাল উদ্যোগ। আমার লক্ষ্য হলো সরকারি সেবা সংক্রান্ত তথ্য আপনার জন্য সহজলভ্য করে তোলা। jiggasha.ai এর মাধ্যমে, আমি আপনাকে বিভিন্ন সরকারি সেবা, নীতিমালা, এবং প্রক্রিয়া সম্পর্কে তথ্য প্রদান করতে পারি। আমি আপনার প্রশ্নের উত্তর দিতে, নির্দেশনা প্রদান করতে, এবং প্রাসঙ্গিক তথ্য খুঁজে পেতে সাহায্য করতে প্রস্তুত। আসুন, একসাথে বাংলাদেশের নাগরিক সেবার উন্নয়নে কাজ করি!"
 # --- LLM Service Definitions ---
-# Define the available LLM services.
-llm_services:
-  small_llm:
-    api_key_env: "VLLM_SMALL_API_KEY"
-    model_name_env: "VLLM_SMALL_MODEL_NAME"
-    base_url_env: "VLLM_SMALL_BASE_URL"
-    max_context_tokens: 16384
-  medium_llm:
-    api_key_env: "VLLM_MEDIUM_API_KEY"
-    model_name_env: "VLLM_MEDIUM_MODEL_NAME"
-    base_url_env: "VLLM_MEDIUM_BASE_URL"
-    max_context_tokens: 131072
-
-# --- Task-to-Model Mapping ---
-# Assign a defined LLM service to each specific task in the pipeline.
-task_to_model_mapping:
-  retrieval_plan: "medium_llm"
-  reranker: "small_llm"
-  answer_generator: "medium_llm"
-  summarizer: "small_llm"
-  non_retrieval_responder: "medium_llm"
-
-# --- Conversation Management ---
-conversation:
-  history_window: 10  # Number of past exchanges to retain in history.
+max_context_tokens: 32000
+history_window: 10  # Number of past exchanges to retain in history.
 
 # --- Vector Retriever Configuration ---
 vector_retriever:
   top_k: 10
   collections:
-    - "PassageDB"
-    - "TopicDB"
-    - "KeywordDB"
-  passage_collection: "PassageDB"
-  max_passages_to_rerank: 4
+    - "PropositionsDB"
+    - "SummariesDB"
+    - "QuestionsDB"
+  max_passages_to_rerank: 3
   # --- Reciprocal Rank Fusion (RRF) constant.
   # A standard value is 60. Lower values give more weight to items that appear
   # in the top ranks, while higher values spread the weight more evenly.
   rrf_k: 60
   passage_id_meta_key: "passage_id"
 
-# --- Reranker Configuration ---
-reranker:
-  relevance_score_threshold: 1
-
-# --- Category Refinement Configuration ---
-category_refinement:
-  score_cutoff: 85
-
-# --- NEW: Concurrency Control ---
-concurrency_control:
-  # The maximum number of reranker LLM calls that can run at the same time.
-  # A value between 3-5 is a safe starting point for a single GPU.
-  reranker_concurrency_limit: 2
 
 # --- NEW: Token Management ---
 # Centralized configuration for prompt building and truncation logic.
 token_management:
-  # The Hugging Face model name for the tokenizer used to count tokens.
-  # This should be a model from the same family as the ones being used.
-  tokenizer_model_name: "google/gemma-3-4b-it"
   
   # A safety margin (as a decimal percentage) to reserve for the prompt's
   # static text (instructions, boilerplate) when calculating available tokens.
