@@ -7,20 +7,23 @@ from collections import defaultdict
 from dotenv import load_dotenv
 from typing import List, Dict, Optional, Any, Tuple
 
-# Import your custom embedder module and its configuration
-from cogops.models.jina_embedder import JinaTritonEmbedder, JinaV3TritonEmbedderConfig
-
+# --- Custom Module Imports ---
+# Adjust these paths based on your actual project structure
+from cogops.models.embGemma_embedder import GemmaTritonEmbedder, GemmaTritonEmbedderConfig
+from cogops.retriver.db import SQLDatabaseManager
+from cogops.utils.db_config import get_postgres_config
 # --- Setup Logging ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- Load Environment Variables ---
 load_dotenv()
+POSTGRES_CONFIG = get_postgres_config()
 
 class VectorRetriever:
     """
-    A class to retrieve and rank documents from ChromaDB using Reciprocal Rank Fusion (RRF).
-    This approach combines results from multiple collections based on their rank to
-    produce a single, highly relevant list of candidate documents.
+    Retrieves and ranks documents by first querying multiple vector collections in ChromaDB,
+    fusing the results using RRF to get the top passage IDs, and then fetching the
+    full passage content from a PostgreSQL database.
     """
     def __init__(self, config_path: str = "configs/config.yaml"):
         logging.info("Initializing VectorRetriever...")
@@ -29,29 +32,31 @@ class VectorRetriever:
         if not retriever_config:
             raise ValueError(f"Config file '{config_path}' is missing 'vector_retriever' section.")
 
-        self.top_k = retriever_config.get("top_k", 5)
-        self.all_collection_names = retriever_config.get("collections", [])
-        self.passage_collection_name = retriever_config.get("passage_collection")
-        self.max_passages_to_rerank = retriever_config.get("max_passages_to_rerank", 10)
+        # --- Load configuration ---
+        self.top_k = retriever_config.get("top_k", 10)
+        self.collection_names = retriever_config.get("collections", [])
+        self.max_passages_to_select = retriever_config.get("max_passages_to_select", 3)
         self.rrf_k = retriever_config.get("rrf_k", 60)
         self.passage_id_key = retriever_config.get("passage_id_meta_key", "passage_id")
 
-        if not self.all_collection_names or not self.passage_collection_name:
-            raise ValueError("Config missing 'collections' or 'passage_collection' keys.")
+        if not self.collection_names:
+            raise ValueError("Config missing 'collections' key.")
 
+        # --- Initialize clients and embedder ---
         self.chroma_client = self._connect_to_chroma()
+        self.db_manager = SQLDatabaseManager(POSTGRES_CONFIG)
         self.embedder = self._initialize_embedder()
 
-        self.passage_collection = self.chroma_client.get_collection(name=self.passage_collection_name)
-        self.all_collections = {
-            name: self.chroma_client.get_collection(name=name) for name in self.all_collection_names
+        # Get handles to all required ChromaDB collections
+        self.collections = {
+            name: self.chroma_client.get_collection(name=name) for name in self.collection_names
         }
-        logging.info(f"VectorRetriever initialized. Passage ID key: '{self.passage_id_key}'.")
+        logging.info(f"VectorRetriever initialized. Will select top {self.max_passages_to_select} passages after RRF.")
 
     def _load_config(self, config_path: str) -> Dict:
         logging.info(f"Loading configuration from: {config_path}")
         try:
-            with open(config_path, 'r') as f:
+            with open(config_path, 'r', encoding='utf-8') as f:
                 return yaml.safe_load(f)
         except FileNotFoundError:
             logging.error(f"Configuration file not found at: {config_path}")
@@ -59,7 +64,7 @@ class VectorRetriever:
 
     def _connect_to_chroma(self) -> chromadb.HttpClient:
         CHROMA_HOST = os.environ.get("CHROMA_DB_HOST", "localhost")
-        CHROMA_PORT = int(os.environ.get("CHROMA_DB_PORT", 8443))
+        CHROMA_PORT = int(os.environ.get("CHROMA_DB_PORT", 8000))
         logging.info(f"Connecting to ChromaDB at {CHROMA_HOST}:{CHROMA_PORT}...")
         try:
             client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
@@ -70,34 +75,28 @@ class VectorRetriever:
             logging.error(f"Failed to connect to ChromaDB: {e}", exc_info=True)
             raise
 
-    def _initialize_embedder(self) -> JinaTritonEmbedder:
+    def _initialize_embedder(self) -> GemmaTritonEmbedder:
         TRITON_URL = os.environ.get("TRITON_EMBEDDER_URL", "http://localhost:6000")
-        logging.info(f"Initializing embedder with Triton at: {TRITON_URL}")
-        embedder_config = JinaV3TritonEmbedderConfig(triton_url=TRITON_URL)
-        return JinaTritonEmbedder(config=embedder_config)
+        logging.info(f"Initializing GemmaTritonEmbedder with Triton at: {TRITON_URL}")
+        embedder_config = GemmaTritonEmbedderConfig(triton_url=TRITON_URL)
+        return GemmaTritonEmbedder(config=embedder_config)
 
     async def _query_collection_async(
         self,
         collection_name: str,
         query_embedding: List[float],
-        top_k: int,
-        filters: Optional[Dict[str, Any]] = None
+        top_k: int
     ) -> List[Tuple[int, int]]:
         """
         Queries a single collection and returns a list of (passage_id, rank) tuples.
-        Passage IDs are converted to integers for consistent matching.
         """
-        collection = self.all_collections[collection_name]
+        collection = self.collections[collection_name]
         try:
-            query_args = {
-                "query_embeddings": [query_embedding],
-                "n_results": top_k,
-                "include": ["metadatas"]
-            }
-            if filters:
-                query_args["where"] = filters
-            
-            results = collection.query(**query_args)
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                include=["metadatas"]
+            )
             
             ranked_results = []
             if results and results['metadatas'] and results['metadatas'][0]:
@@ -105,116 +104,126 @@ class VectorRetriever:
                     passage_id_val = meta.get(self.passage_id_key)
                     if passage_id_val is not None:
                         try:
-                            # --- FIX: Ensure passage_id is an integer ---
                             passage_id = int(passage_id_val)
                             rank = i + 1
                             ranked_results.append((passage_id, rank))
                         except (ValueError, TypeError):
-                            logging.warning(f"Could not convert passage_id '{passage_id_val}' to int. Skipping.")
-                            continue
+                            logging.warning(f"In collection '{collection_name}', could not convert passage_id '{passage_id_val}' to int. Skipping.")
             return ranked_results
         except Exception as e:
             logging.error(f"Error querying {collection_name}: {e}")
             return []
 
-    async def get_unique_passages_from_all_collections(
+    async def retrieve_passages(
         self,
         query: str,
-        top_k: int = None,
-        filters: Optional[Dict[str, Any]] = None
+        top_k_per_collection: int = None,
     ) -> List[Dict[str, Any]]:
-        if top_k is None:
-            top_k = self.top_k
-
-        log_message = f"Querying all collections for '{query}' with top_k={top_k} each for RRF."
-        if filters:
-            log_message += f" Applying filters: {filters}"
-        logging.info(log_message)
+        """
+        Performs the end-to-end retrieval process.
         
+        1. Embeds the query.
+        2. Queries all vector collections concurrently.
+        3. Fuses the results using RRF to rank passage IDs.
+        4. Selects the top N passage IDs.
+        5. Fetches the full passage data for these IDs from PostgreSQL.
+        
+        Returns:
+            A list of dictionaries, each containing passage details, ordered by RRF score.
+        """
+        if top_k_per_collection is None:
+            top_k_per_collection = self.top_k
+
+        logging.info(f"Starting retrieval for query: '{query}'")
+        
+        # Step 1: Embed the query
         query_embedding = self.embedder.embed_queries([query])[0]
 
+        # Step 2: Query all collections in parallel
         tasks = [
-            self._query_collection_async(name, query_embedding, top_k, filters)
-            for name in self.all_collection_names
+            self._query_collection_async(name, query_embedding, top_k_per_collection)
+            for name in self.collection_names
         ]
         list_of_ranked_lists = await asyncio.gather(*tasks)
 
+        # Step 3: Apply Reciprocal Rank Fusion
         fused_scores = defaultdict(float)
         for ranked_list in list_of_ranked_lists:
             for passage_id, rank in ranked_list:
                 fused_scores[passage_id] += 1.0 / (self.rrf_k + rank)
         
         if not fused_scores:
-            logging.warning("No passages found after querying all collections.")
+            logging.warning("No passages found after querying all vector collections.")
             return []
 
-        # --- sorted_passage_ids will now be a list of integers ---
+        # Step 4: Sort by RRF score and select the top passage IDs
         sorted_passage_ids = sorted(
             fused_scores.keys(),
             key=lambda pid: fused_scores[pid],
             reverse=True
         )
-
-        top_passage_ids = sorted_passage_ids[:self.max_passages_to_rerank]
-        logging.info(f"Found {len(fused_scores)} unique passages. Retrieving top {len(top_passage_ids)} after RRF.")
+        top_passage_ids = sorted_passage_ids[:self.max_passages_to_select]
+        logging.info(f"RRF found {len(fused_scores)} unique passages. Selecting top {len(top_passage_ids)} IDs for retrieval.")
 
         if not top_passage_ids:
             return []
 
+        # Step 5: Fetch full passage data from PostgreSQL
         try:
-            # --- FIX: The where clause now correctly uses integers ---
-            retrieved_passages = self.passage_collection.get(
-                where={self.passage_id_key: {"$in": top_passage_ids}}
-            )
+            logging.info(f"Fetching full data for IDs from PostgreSQL: {top_passage_ids}")
+            passages_df = self.db_manager.select_passages_by_ids(top_passage_ids)
             
-            passage_map = {
-                # --- FIX: Convert the key from metadata to an int for matching ---
-                int(meta[self.passage_id_key]): {
-                    'id': retrieved_passages['ids'][i],
-                    'document': retrieved_passages['documents'][i],
-                    'metadata': meta
-                }
-                for i, meta in enumerate(retrieved_passages['metadatas'])
-                if self.passage_id_key in meta
-            }
+            if passages_df.empty:
+                logging.warning(f"PostgreSQL query returned no data for IDs: {top_passage_ids}")
+                return []
+
+            # Convert DataFrame to a dictionary for efficient, ordered lookup
+            passage_map = {row['passage_id']: row.to_dict() for index, row in passages_df.iterrows()}
+
+            # Re-order the results from the database to match the RRF ranking
+            final_ordered_passages = []
+            for pid in top_passage_ids:
+                if pid in passage_map:
+                    final_ordered_passages.append(passage_map[pid])
+            
+            return final_ordered_passages
 
         except Exception as e:
-            logging.error(f"Failed to retrieve passages from ChromaDB for IDs: {top_passage_ids}. Error: {e}")
+            logging.error(f"Failed to retrieve passages from PostgreSQL. Error: {e}", exc_info=True)
             return []
 
-        # Re-order the results according to our RRF sort
-        final_ordered_docs = []
-        for passage_id in top_passage_ids:
-            if passage_id in passage_map:
-                final_ordered_docs.append(passage_map[passage_id])
-        
-        return final_ordered_docs
-
     def close(self):
+        """Cleanly closes any open connections."""
         if self.embedder:
             self.embedder.close()
             logging.info("Embedder connection closed.")
 
 async def main():
+    """Main function to test the VectorRetriever."""
+    retriever = None
     try:
         retriever = VectorRetriever(config_path="configs/config.yaml")
-        user_query = "হারিয়ে যাওয়া জাতীয় পরিচয়পত্র উত্তোলনের পদ্ধতি"
+        user_query = "আমার এন আই ডি হারায়ে গেছে রাস্তায়"
         
-        print("\n--- Testing: Get Passages with Reciprocal Rank Fusion ---")
-        passages = await retriever.get_unique_passages_from_all_collections(user_query,filters={"category":'স্মার্ট কার্ড ও জাতীয়পরিচয়পত্র'})
+        print(f"\n--- Testing retrieval for query: '{user_query}' ---")
+        passages = await retriever.retrieve_passages(user_query)
         
-        print(f"\nRetrieved {len(passages)} passages, sorted by RRF score:")
-        for i, passage in enumerate(passages):
-            passage_id = passage['metadata'].get(retriever.passage_id_key, 'N/A')
-            print(
-                f"  Rank {i+1}: Passage ID: {passage_id}, "
-                f"Content: '{passage['document'][:70]}...'"
-            )
+        if passages:
+            print(f"\nRetrieved {len(passages)} passages from PostgreSQL, sorted by relevance:")
+            for i, passage in enumerate(passages):
+                print("-" * 20)
+                print(f"Rank {i+1}:")
+                print(f"  Passage ID: {passage.get('passage_id')}")
+                print(f"  URL: {passage.get('url')}")
+                print(f"  Date: {passage.get('date')}")
+                print(f"  Text: '{str(passage.get('text'))[:150]}...'")
+        else:
+            print("\nNo passages were retrieved for the query.")
             
     except Exception as e:
         logging.error(f"An error occurred in the main execution: {e}", exc_info=True)
     finally:
-        if 'retriever' in locals():
+        if retriever:
             retriever.close()
         logging.info("\n--- Script Finished ---")
 

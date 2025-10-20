@@ -19,7 +19,7 @@ services:
       --gpu-memory-utilization 0.85
       --guided-decoding-backend xgrammar
       --enable-auto-tool-choice
-      --tool-call-parser qwen3_coder
+      --tool-call-parser hermes
       --trust-remote-code
       --api-key ${VLLM_API_KEY}
 

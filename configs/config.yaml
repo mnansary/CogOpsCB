@@ -14,7 +14,7 @@ vector_retriever:
     - "PropositionsDB"
     - "SummariesDB"
     - "QuestionsDB"
-  max_passages_to_rerank: 3
+  max_passages_to_select: 3
   # --- Reciprocal Rank Fusion (RRF) constant.
   # A standard value is 60. Lower values give more weight to items that appear
   # in the top ranks, while higher values spread the weight more evenly.
