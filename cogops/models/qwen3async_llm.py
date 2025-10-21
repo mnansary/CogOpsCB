@@ -98,13 +98,14 @@ class AsyncLLMService:
         self,
         messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
-        available_tools: Dict[str, callable]
+        available_tools: Dict[str, callable],
+        **kwargs: Any  # <-- FIX: Accept kwargs
     ) -> str:
         """Handles a multi-step conversation with tool-calling capabilities asynchronously."""
         try:
             print("\n   [Step 1: Asking model if a tool is needed...]")
             response = await self.client.chat.completions.create(
-                model=self.model, messages=messages, tools=tools, tool_choice="auto",
+                model=self.model, messages=messages, tools=tools, tool_choice="auto", **kwargs # <-- FIX: Pass kwargs
             )
             response_message = response.choices[0].message
             tool_calls = response_message.tool_calls
@@ -137,7 +138,7 @@ class AsyncLLMService:
             
             print("   [Step 3: Sending tool result back to model for final answer...]")
             second_response = await self.client.chat.completions.create(
-                model=self.model, messages=messages,
+                model=self.model, messages=messages, **kwargs # <-- FIX: Pass kwargs
             )
             return second_response.choices[0].message.content or "Model did not provide a final response."
         except Exception as e:
@@ -148,14 +149,15 @@ class AsyncLLMService:
         self,
         messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
-        available_tools: Dict[str, callable]
+        available_tools: Dict[str, callable],
+        **kwargs: Any  # <-- FIX: Accept kwargs
     ) -> AsyncGenerator[str, None]:
         """Handles a multi-step conversation with tool-calling capabilities, streaming the results asynchronously."""
         try:
             print("\n   [Step 1: Streaming model response to check for tool calls...]")
 
             stream = await self.client.chat.completions.create(
-                model=self.model, messages=messages, tools=tools, tool_choice="auto", stream=True
+                model=self.model, messages=messages, tools=tools, tool_choice="auto", stream=True, **kwargs # <-- FIX: Pass kwargs
             )
 
             response_message = {"role": "assistant", "content": "", "tool_calls": []}
@@ -222,7 +224,7 @@ class AsyncLLMService:
             print("   [Step 3: Streaming final answer from model...]")
 
             final_stream = await self.client.chat.completions.create(
-                model=self.model, messages=messages, stream=True
+                model=self.model, messages=messages, stream=True, **kwargs # <-- FIX: Pass kwargs
             )
 
             async for chunk in final_stream:
@@ -302,7 +304,7 @@ async def main():
         print(f"Prompt: {user_prompt}")
         messages = [{"role": "user", "content": user_prompt}]
         final_response = await llm_service.invoke_with_tools(
-            messages=messages, tools=tools_list, available_tools=available_tools_map
+            messages=messages, tools=tools_list, available_tools=available_tools_map, temperature=0.0
         )
         print(f"\nFinal Model Response:\n{final_response}")
     except Exception as e:
@@ -315,7 +317,7 @@ async def main():
         print(f"Prompt: {user_prompt}\nStreaming Response:")
         messages = [{"role": "user", "content": user_prompt}]
         async for chunk in llm_service.stream_with_tool_calls(
-            messages=messages, tools=tools_list, available_tools=available_tools_map
+            messages=messages, tools=tools_list, available_tools=available_tools_map, temperature=0.0
         ):
             print(chunk, end="", flush=True)
         print()
