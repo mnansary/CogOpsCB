@@ -15,12 +15,20 @@ from pydantic import BaseModel, Field
 from evaluation.retriver import DynamicVectorRetriever
 from evaluation.query_formatter import QueryFormatter
 from cogops.models.qwen3async_llm import AsyncLLMService
+from fastapi.middleware.cors import CORSMiddleware
 
 # --- Setup Logging & App ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 app = FastAPI(
     title="Q&A Retrieval Evaluation API",
     description="An API to test and evaluate different retrieval models and query formatting strategies."
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # --- Configuration ---
