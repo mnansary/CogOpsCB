@@ -19,6 +19,9 @@ app = FastAPI(
     title="Configurable Chat Agent API",
     description="A production-grade API for the Chat Agent service with multi-user session management.",
     version="2.0.0",
+    docs_url=None,    # Disable default access
+    redoc_url=None,   # Disable default access
+    openapi_url=None  # Disable default access
 )
 app.add_middleware(
     CORSMiddleware,
